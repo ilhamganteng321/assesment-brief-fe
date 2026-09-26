@@ -19,7 +19,7 @@ export default function AuthenticatedLayout({
 }: AuthenticatedLayoutProps) {
 	return (
 		<ProtectedRoute>
-			<div className="flex min-h-svh w-full bg-muted/30">
+			<div className="flex min-h-svh w-full bg-background">
 				<aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col gap-6 border-r bg-sidebar px-4 py-5 text-sidebar-foreground lg:flex">
 					<BrandMark className="px-2" />
 					<AppNavigation className="flex-1" />

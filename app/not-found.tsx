@@ -4,7 +4,7 @@ import { APP_NAME } from "@/lib/app-config";
 
 export default function NotFound() {
 	return (
-		<main className="flex min-h-svh items-center justify-center bg-muted/30 p-6">
+		<main className="flex min-h-svh items-center justify-center bg-background p-6">
 			<div className="flex w-full max-w-lg flex-col items-start gap-3 rounded-xl border bg-card p-6">
 				<p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
 					{APP_NAME}
