@@ -64,7 +64,9 @@ export function formatFileSize(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** The `accept` attribute for a file input limited to the server allow-list. */
+/**
+ * The `accept` attribute for a file input limited to the server allow-list.
+ */
 export const ATTACHMENT_ACCEPT_ATTRIBUTE = [
 	...ATTACHMENT_MIME_TYPES,
 	".png",
@@ -76,12 +78,50 @@ export const ATTACHMENT_ACCEPT_ATTRIBUTE = [
 ].join(",");
 
 /**
+ * Whether a preview can be shown inline.
+ *
+ * Images render as a thumbnail and a PDF as an embedded frame. Anything else —
+ * a ZIP, for instance — has no useful inline representation, so the UI offers
+ * download only and says so rather than showing a broken frame.
+ */
+export function canPreviewInline(mimeType: string): boolean {
+	return (
+		mimeType === "image/png" ||
+		mimeType === "image/jpeg" ||
+		mimeType === "image/webp" ||
+		mimeType === "application/pdf"
+	);
+}
+
+export function isImageAttachment(mimeType: string): boolean {
+	return (
+		mimeType === "image/png" ||
+		mimeType === "image/jpeg" ||
+		mimeType === "image/webp"
+	);
+}
+
+export type PreviewKind = "image" | "pdf" | "none";
+
+export function getPreviewKind(mimeType: string): PreviewKind {
+	if (isImageAttachment(mimeType)) {
+		return "image";
+	}
+	return mimeType === "application/pdf" ? "pdf" : "none";
+}
+
+/**
  * Client-side pre-flight for the upload form.
  *
- * This only exists to avoid a pointless round trip and to explain the problem in
- * the user's language. It is not the enforcement point: the server re-checks the
- * declared type against the file's magic bytes, and an empty or oversized file is
- * rejected there even if it passes these checks.
+ * This exists to avoid a pointless round trip and to explain a problem in the
+ * user's language. It is not the enforcement point: the server re-derives the
+ * type from the file's magic bytes, and an empty or oversized file is rejected
+ * there even if it passes these checks.
+ *
+ * A file whose type the browser reports as unknown is deliberately *not* blocked.
+ * Browsers label plenty of legitimate files `application/octet-stream`, and the
+ * server can identify those from their contents; refusing them here would reject
+ * files the API would have accepted.
  */
 export function validateAttachmentFile(file: {
 	name: string;
@@ -96,8 +136,26 @@ export function validateAttachmentFile(file: {
 			MAX_ATTACHMENT_SIZE_BYTES / (1024 * 1024),
 		)} MB or smaller.`;
 	}
+	if (isUnknownBrowserType(file.type)) {
+		return null;
+	}
 	if (!(ATTACHMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
 		return `${getAttachmentMimeLabel(file.type)} files are not accepted. Upload a PNG, JPEG, WebP, PDF, or ZIP.`;
 	}
 	return null;
+}
+
+/**
+ * Whether the browser declined to name a type.
+ *
+ * Treated as "let the server decide" rather than as a rejection, because the
+ * server identifies the type from the bytes and an unrecognised label says
+ * nothing about whether the file is acceptable.
+ */
+function isUnknownBrowserType(type: string): boolean {
+	return (
+		type.length === 0 ||
+		type === "application/octet-stream" ||
+		type === "binary/octet-stream"
+	);
 }

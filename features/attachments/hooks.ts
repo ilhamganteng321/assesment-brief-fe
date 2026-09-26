@@ -1,4 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+"use client";
+
+import {
+	keepPreviousData,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 
 import type { UserRole } from "@/features/auth/types";
 
@@ -13,16 +20,25 @@ import type { Attachment } from "./types";
 export const attachmentKeys = {
 	all: ["attachments"] as const,
 	lists: () => [...attachmentKeys.all, "list"] as const,
-	list: (projectId: string, taskId: string) =>
+	list: (projectId: string, taskId: string, page: number, limit: number) =>
+		[...attachmentKeys.lists(), projectId, taskId, page, limit] as const,
+	/**
+	 * The prefix every page of one task's attachments sits under. Invalidation
+	 * targets this so a refresh clears the whole paginated set rather than only
+	 * the page currently on screen.
+	 */
+	listPrefix: (projectId: string, taskId: string) =>
 		[...attachmentKeys.lists(), projectId, taskId] as const,
 };
+
+export const DEFAULT_ATTACHMENT_PAGE_SIZE = 20;
 
 function isClientRole(role: UserRole | undefined): boolean {
 	return role === "CLIENT";
 }
 
 /**
- * Attachments for one task.
+ * Attachments for one page of one task.
  *
  * Disabled for a client guest because the server refuses them outright: the
  * policy rejects every CLIENT before the project check, since deliverables are
@@ -33,38 +49,31 @@ export function useAttachmentList(
 	role: UserRole | undefined,
 	projectId: string,
 	taskId: string,
+	page = 1,
+	limit = DEFAULT_ATTACHMENT_PAGE_SIZE,
 ) {
 	return useQuery({
-		queryKey: attachmentKeys.list(projectId, taskId),
+		queryKey: attachmentKeys.list(projectId, taskId, page, limit),
 		queryFn: async ({ signal }) =>
-			listAttachmentsRequest(projectId, taskId, signal),
+			listAttachmentsRequest(projectId, taskId, { page, limit }, signal),
 		enabled:
 			Boolean(role) &&
 			!isClientRole(role) &&
 			projectId.length > 0 &&
 			taskId.length > 0,
+		// Keeps the current page rendered while the next one loads, so paging
+		// through a long list does not collapse to a skeleton each time.
+		placeholderData: keepPreviousData,
 	});
 }
 
 /**
- * Mirrors `canUploadAttachment`: PM and INTERNAL may add deliverables, a client
- * guest may not. Checked before the request so an impossible action fails with a
- * readable message instead of a round trip; the server enforces the same rule.
+ * Uploading is allowed for PM and INTERNAL alike, mirroring the server policy.
+ *
+ * The mutation is deliberately not optimistic: the panel treats an attachment as
+ * existing only once this resolves, and `onSuccess` invalidates the list so the
+ * server's own row is what gets displayed.
  */
-function assertCanUpload(role: UserRole | undefined): void {
-	if (role !== "PM" && role !== "INTERNAL") {
-		throw new Error("You do not have permission to upload attachments.");
-	}
-}
-
-/** Mirrors `canDeleteAttachment`, which is PM-only. */
-function assertCanDelete(role: UserRole | undefined): void {
-	if (role !== "PM") {
-		throw new Error("Only project managers can remove attachments.");
-	}
-}
-
-/** Uploading is allowed for PM and INTERNAL alike, mirroring the server policy. */
 export function useUploadAttachment(
 	role: UserRole | undefined,
 	projectId: string,
@@ -73,19 +82,25 @@ export function useUploadAttachment(
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: (file: File) => {
+		mutationFn: ({
+			file,
+			onProgress,
+		}: {
+			file: File;
+			onProgress?: (percent: number) => void;
+		}) => {
 			assertCanUpload(role);
-			return uploadAttachmentRequest(projectId, taskId, file);
+			return uploadAttachmentRequest(projectId, taskId, file, onProgress);
 		},
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({
-				queryKey: attachmentKeys.list(projectId, taskId),
+				queryKey: attachmentKeys.listPrefix(projectId, taskId),
 			});
 		},
 	});
 }
 
-/** Removal is PM-only on the server, mirroring `canDeleteAttachment`. */
+/** Removal follows the server's project-membership rule; see `assertCanDelete`. */
 export function useDeleteAttachment(
 	role: UserRole | undefined,
 	projectId: string,
@@ -100,7 +115,7 @@ export function useDeleteAttachment(
 		},
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({
-				queryKey: attachmentKeys.list(projectId, taskId),
+				queryKey: attachmentKeys.listPrefix(projectId, taskId),
 			});
 		},
 	});
@@ -113,4 +128,33 @@ export function useDeleteAttachment(
 export function useDownloadAttachment(projectId: string, taskId: string) {
 	return (attachment: Attachment) =>
 		downloadAttachmentRequest(projectId, taskId, attachment);
+}
+
+/**
+ * Mirrors `canUploadAttachment`: PM and INTERNAL may add deliverables, a client
+ * guest may not. Checked before the request so an impossible action fails with a
+ * readable message instead of a round trip; the server enforces the same rule.
+ */
+function assertCanUpload(role: UserRole | undefined): void {
+	if (role !== "PM" && role !== "INTERNAL") {
+		throw new Error("You do not have permission to upload attachments.");
+	}
+}
+
+/**
+ * Mirrors the server's delete rule, which is project membership rather than a
+ * role: `softDeleteAttachment` is guarded only by `canAccessProjectAttachments`,
+ * so any internal member of the project may remove a file and a client guest may
+ * not.
+ *
+ * An earlier version of this mirror made removal PM-only. That rule never existed
+ * on the server, so the UI was hiding a button from people the API would have
+ * accepted, and implying a restriction that was not actually enforced.
+ */
+function assertCanDelete(role: UserRole | undefined): void {
+	if (role !== "PM" && role !== "INTERNAL") {
+		throw new Error(
+			"You do not have permission to remove attachments on this task.",
+		);
+	}
 }

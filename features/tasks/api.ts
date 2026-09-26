@@ -8,6 +8,7 @@ import type {
 	CreateTaskPayload,
 	Task,
 	TaskAuditLogList,
+	TaskAuditLogQuery,
 	TaskDependency,
 	TaskDependencyResponse,
 	TaskDetail,
@@ -100,15 +101,20 @@ export async function deleteTaskDependency(
  * The immutable change history for one task. Read-only by design: the API
  * exposes no mutation route for audit records, so this module has no
  * counterpart that could rewrite history.
+ *
+ * Paging and the `changedColumn` filter are the two query options the audit
+ * endpoint actually accepts; nothing else is invented, so an unsupported
+ * parameter cannot be sent and be silently ignored.
  */
 export async function listTaskAuditLogs(
 	projectId: string,
 	taskId: string,
+	query: TaskAuditLogQuery = {},
 	signal?: AbortSignal,
 ): Promise<TaskAuditLogList> {
 	const response = await apiClient.get<ApiSuccessResponse<TaskAuditLogList>>(
 		`/projects/${projectId}/tasks/${taskId}/audit-logs`,
-		{ signal },
+		{ params: query, signal },
 	);
 	return response.data.data;
 }

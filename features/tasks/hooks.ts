@@ -4,7 +4,6 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
-
 import type { UserRole } from "@/features/auth/types";
 // The project query-key factory is imported rather than rebuilt here: invalidation
 // matches on key identity, so a second copy of the shape would silently stop
@@ -28,6 +27,7 @@ import {
 import type {
 	CreateTaskDependencyInput,
 	CreateTaskPayload,
+	TaskAuditLogQuery,
 	UpdateTaskPayload,
 } from "./types";
 
@@ -40,7 +40,14 @@ export const taskKeys = {
 	detail: (taskId: string) => [...taskKeys.details(), taskId] as const,
 	dependencies: (taskId: string) =>
 		[...taskKeys.details(), taskId, "dependencies"] as const,
-	auditLogs: (taskId: string) =>
+	auditLogs: (taskId: string, page: number, limit: number, column: string) =>
+		[...taskKeys.details(), taskId, "audit-logs", page, limit, column] as const,
+	/**
+	 * The prefix every page of one task's history sits under. Invalidation targets
+	 * this rather than a single page key, so a refresh clears the whole paginated
+	 * set instead of only the slice currently on screen.
+	 */
+	auditLogPrefix: (taskId: string) =>
 		[...taskKeys.details(), taskId, "audit-logs"] as const,
 };
 
@@ -71,7 +78,9 @@ async function invalidateTaskGraph(
 		queryClient.invalidateQueries({ queryKey: taskKeys.dependencies(taskId) }),
 		// Every successful task mutation appends to the trail, so a change has to
 		// refresh the history alongside the row it produced.
-		queryClient.invalidateQueries({ queryKey: taskKeys.auditLogs(taskId) }),
+		queryClient.invalidateQueries({
+			queryKey: taskKeys.auditLogPrefix(taskId),
+		}),
 	]);
 }
 
@@ -196,25 +205,37 @@ export function useTaskDependencies(
 }
 
 /**
- * The task's change history. Disabled for clients because the API refuses them:
- * the trail names internal actors and holds internal field values, so there is
- * nothing a client is allowed to see. Hiding the section is a convenience only,
- * the 403 is what enforces it.
+ * The task's change history.
+ *
+ * Disabled for clients because the API refuses them: the trail names internal
+ * actors and holds internal field values, so there is nothing a client is allowed
+ * to see. Hiding the section is a convenience only, the 403 is what enforces it.
+ *
+ * The page and column filter are part of the query key, so paging or filtering
+ * does not serve one slice of history in place of another.
  */
 export function useTaskAuditLogs(
 	role: UserRole | undefined,
 	projectId: string,
 	taskId: string,
+	query: TaskAuditLogQuery = {},
 ) {
+	const page = query.page ?? 1;
+	const limit = query.limit ?? 20;
+	const column = query.changedColumn ?? "all";
+
 	return useQuery({
-		queryKey: taskKeys.auditLogs(taskId),
+		queryKey: taskKeys.auditLogs(taskId, page, limit, column),
 		queryFn: async ({ signal }) =>
-			listTaskAuditLogsRequest(projectId, taskId, signal),
+			listTaskAuditLogsRequest(projectId, taskId, query, signal),
 		enabled:
 			Boolean(role) &&
-			!isClientRole(role) &&
+			role !== "CLIENT" &&
 			projectId.length > 0 &&
 			taskId.length > 0,
+		// The previous page stays on screen while the next one loads, so reading
+		// back through history does not flash a skeleton each time.
+		placeholderData: keepPreviousData,
 	});
 }
 

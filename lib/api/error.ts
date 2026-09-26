@@ -101,6 +101,38 @@ export function getApiErrorMessage(error: unknown): string {
 			break;
 	}
 
+	// Attachment failures get wording a person can act on. The server's own
+	// message is used as the fallback, so a code added later still reads sensibly
+	// rather than disappearing behind a generic string.
+	switch (apiError.code) {
+		case "ATTACHMENT_UNSUPPORTED_TYPE":
+			return "That file type is not supported. Upload a PNG, JPEG, WebP, PDF, or ZIP.";
+		case "ATTACHMENT_FILE_TOO_LARGE": {
+			const maxSizeBytes = apiError.details?.maxSizeBytes;
+			return typeof maxSizeBytes === "number" && maxSizeBytes > 0
+				? `The file is too large. The limit is ${formatByteLimit(maxSizeBytes)}.`
+				: "The file is too large.";
+		}
+		case "ATTACHMENT_FILE_REQUIRED":
+			return "Choose a file to attach.";
+		case "ATTACHMENT_INVALID_FILE_NAME":
+			return "That file name cannot be used. Rename the file and try again.";
+		case "ATTACHMENT_ACCESS_DENIED":
+			return "You do not have permission to work with attachments on this task.";
+		case "ATTACHMENT_NOT_FOUND":
+			return "That attachment is no longer available.";
+		case "ATTACHMENT_ALREADY_DELETED":
+			return "That attachment has already been removed.";
+		case "ATTACHMENT_STORAGE_ERROR":
+			return "The file could not be stored. Please try again.";
+		case "NETWORK_ERROR":
+			return "Unable to upload the file. Check your connection and try again.";
+		case "REQUEST_TIMEOUT":
+			return "The upload took too long. Check your connection and try again.";
+		default:
+			break;
+	}
+
 	if (
 		apiError.status === 0 ||
 		apiError.status === 502 ||
@@ -110,6 +142,14 @@ export function getApiErrorMessage(error: unknown): string {
 	}
 
 	return apiError.message || "Something went wrong. Please try again.";
+}
+
+/** The server reports the byte cap in its error details; render it in MB or KB. */
+function formatByteLimit(bytes: number): string {
+	const megabytes = bytes / (1024 * 1024);
+	return Number.isInteger(megabytes)
+		? `${String(megabytes)} MB`
+		: `${String(Math.round(bytes / 1024))} KB`;
 }
 
 /**

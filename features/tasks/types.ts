@@ -157,3 +157,10 @@ export type TaskAuditLogList = {
 	auditLogs: TaskAuditLog[];
 	pagination: Pagination;
 };
+
+/** The two options the audit endpoint accepts; nothing else is sent. */
+export type TaskAuditLogQuery = {
+	page?: number;
+	limit?: number;
+	changedColumn?: AuditedColumn;
+};

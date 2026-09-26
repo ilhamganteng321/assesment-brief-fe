@@ -216,10 +216,19 @@ export function TaskDetailSection({ taskId }: TaskDetailSectionProps) {
 				</CardContent>
 			</Card>
 
-			<TaskStatusPanel task={task} />
-			<TaskDependencyPanel task={task} />
-			<AttachmentPanel projectId={task.projectId} taskId={task.id} />
-			<TaskActivityPanel task={task} />
+			{/* Two columns on a wide screen, one on a narrow one. The activity
+			    timeline is the long, continuously growing list, so it gets the
+			    narrower rail and the task's own sections get the room they need. */}
+			<div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-3">
+				<div className="flex flex-col gap-6 xl:col-span-2">
+					<TaskStatusPanel task={task} />
+					<TaskDependencyPanel task={task} />
+					<AttachmentPanel projectId={task.projectId} taskId={task.id} />
+				</div>
+				<div className="flex flex-col gap-6">
+					<TaskActivityPanel task={task} />
+				</div>
+			</div>
 			{canEdit ? (
 				<TaskFormDialog
 					assignees={assignees}
