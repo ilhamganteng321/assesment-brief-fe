@@ -64,7 +64,11 @@ export function TaskListSection({
 		[projectId, urlState],
 	);
 	const [formOpen, setFormOpen] = useState(false);
-	const [editingTask, setEditingTask] = useState<Task | undefined>();
+	// Only the id is held, never a task snapshot. A rejected optimistic-lock
+	// conflict triggers a refetch, and the dialog has to render the row that
+	// actually won -- otherwise it would keep resubmitting the stale version and
+	// never converge.
+	const [editingTaskId, setEditingTaskId] = useState<string | undefined>();
 	const queryParams = useMemo(() => toTaskListQueryParams(state), [state]);
 	const query = useTaskList(role, queryParams);
 	const startTask = useUpdateTask();
@@ -85,12 +89,12 @@ export function TaskListSection({
 	);
 
 	const openCreateDialog = () => {
-		setEditingTask(undefined);
+		setEditingTaskId(undefined);
 		setFormOpen(true);
 	};
 
 	const openEditDialog = (task: Task) => {
-		setEditingTask(task);
+		setEditingTaskId(task.id);
 		setFormOpen(true);
 	};
 
@@ -121,6 +125,12 @@ export function TaskListSection({
 	}
 
 	const { tasks, pagination } = query.data;
+	// Resolved from the live page rather than remembered on click, so the dialog
+	// always submits the version the server currently holds.
+	const editingTask =
+		editingTaskId === undefined
+			? undefined
+			: tasks.find((task) => task.id === editingTaskId);
 	const hasCriteria =
 		state.search.length > 0 ||
 		state.status !== "all" ||
@@ -258,7 +268,9 @@ export function TaskListSection({
 					/>
 				</>
 			)}
-			{canManage && state.projectId.length > 0 ? (
+			{canManage &&
+			state.projectId.length > 0 &&
+			(editingTaskId === undefined || editingTask !== undefined) ? (
 				<TaskFormDialog
 					assignees={assignees}
 					onOpenChange={setFormOpen}

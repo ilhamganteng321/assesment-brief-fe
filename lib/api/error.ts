@@ -6,6 +6,9 @@ import {
 	type ApiFailureResponse,
 } from "./types";
 
+/** Server error code for a lost optimistic-lock race. */
+export const CONCURRENT_MODIFICATION_CODE = "CONCURRENT_MODIFICATION";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
@@ -87,6 +90,13 @@ export function getApiErrorMessage(error: unknown): string {
 			return "Your session has expired. Please sign in again.";
 		case "RATE_LIMITED":
 			return "Too many attempts. Please wait a moment and try again.";
+		case CONCURRENT_MODIFICATION_CODE:
+			// The server already explained it, and the caller refetches the task
+			// so the form is rebuilt from the row that actually won.
+			return (
+				apiError.message ||
+				"This item was changed by someone else. The latest version has been loaded."
+			);
 		default:
 			break;
 	}
@@ -100,6 +110,14 @@ export function getApiErrorMessage(error: unknown): string {
 	}
 
 	return apiError.message || "Something went wrong. Please try again.";
+}
+
+/**
+ * A version conflict means this client's copy of the row is stale, so the only
+ * correct response is to refetch rather than to resend the rejected write.
+ */
+export function isConcurrentModificationError(error: unknown): boolean {
+	return normalizeApiError(error).code === CONCURRENT_MODIFICATION_CODE;
 }
 
 export function shouldInvalidateSession(error: unknown): boolean {

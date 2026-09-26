@@ -197,6 +197,46 @@ describe("toUpdateTaskPayload", () => {
 
 		expect(payload).toEqual({ version: 1 });
 	});
+
+	// A rejected conflict refetches the row, so the retry is built from the newer
+	// server state. The version has to come from that row, and the fields the
+	// other user changed must stay out of the payload -- resending them from a
+	// stale form is exactly the lost update the server rejected.
+	test("a retry after a conflict targets the new version and drops the other user's fields", () => {
+		const reloaded = toTaskFormValues({
+			description: "Create responsive landing page",
+			status: "IN_PROGRESS",
+		});
+
+		// The conflict refetch handed the form the row that won, so the version
+		// and the diff baseline both come from the new state. Only the engineer's
+		// own status change travels; the PM's description is not part of the
+		// payload, so the retry cannot revert it.
+		const payload = toUpdateTaskPayload(
+			{ ...reloaded, status: "DONE" },
+			11,
+			reloaded,
+		);
+		expect(payload).toEqual({ version: 11, status: "DONE" });
+		expect(payload).not.toHaveProperty("description");
+	});
+
+	// Even if the form were still holding the pre-conflict baseline, only the
+	// field the user actually edited is sent. The version is what proves the
+	// client is out of date and gets the request rejected.
+	test("a payload rebuilt from a stale baseline still carries that stale version", () => {
+		const stale = toTaskFormValues({ description: "Create landing page" });
+		const payload = toUpdateTaskPayload(
+			{ ...stale, description: "Updated description" },
+			10,
+			stale,
+		);
+
+		expect(payload).toEqual({
+			version: 10,
+			description: "Updated description",
+		});
+	});
 });
 
 describe("hasTaskFormChanges", () => {

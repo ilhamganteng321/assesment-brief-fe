@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 
 import type { UserRole } from "@/features/auth/types";
+import { isConcurrentModificationError } from "@/lib/api/error";
 import { normalizeListQueryParams } from "@/lib/api/query/normalize";
 import type { ListQueryParams } from "@/lib/api/query/types";
 
@@ -112,6 +113,15 @@ export function useUpdateTask() {
 		onSuccess: async (_data, { taskId }) => {
 			await invalidateTaskGraph(queryClient, taskId);
 		},
+		onError: async (error, { taskId }) => {
+			// A conflict means the submitted version was already stale, so the
+			// cached row is guaranteed wrong. Refetching is what puts the winning
+			// row (and its new version) back in the form; the mutation error is
+			// left intact so the dialog can still explain the rejection.
+			if (isConcurrentModificationError(error)) {
+				await invalidateTaskGraph(queryClient, taskId);
+			}
+		},
 	});
 }
 
@@ -125,6 +135,11 @@ export function useDeleteTask(role: UserRole | undefined) {
 		},
 		onSuccess: async () => {
 			await queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+		},
+		onError: async (error) => {
+			if (isConcurrentModificationError(error)) {
+				await queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+			}
 		},
 	});
 }

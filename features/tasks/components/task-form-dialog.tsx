@@ -19,7 +19,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { UserRole } from "@/features/auth/types";
 import { zodResolver } from "@/features/auth/zod-resolver";
-import { getApiErrorMessage } from "@/lib/api/error";
+import {
+	getApiErrorMessage,
+	isConcurrentModificationError,
+} from "@/lib/api/error";
 import { useCreateTask, useUpdateTask } from "../hooks";
 import {
 	getTaskDepartmentLabel,
@@ -112,6 +115,12 @@ export function TaskFormDialog({
 	const errorMessage = mutation.error
 		? getApiErrorMessage(mutation.error)
 		: null;
+	// A conflict is not just a failed save: the refetch that follows it replaced
+	// the form values with the row that won, so the unsaved edits are gone and
+	// the version is now current. Saying so is the only honest way to ask the
+	// user to review the new state before trying again.
+	const versionConflict =
+		mutation.error !== null && isConcurrentModificationError(mutation.error);
 
 	function handleOpenChange(nextOpen: boolean) {
 		if (!isPending) {
@@ -299,7 +308,13 @@ export function TaskFormDialog({
 						/>
 						Visible to client
 					</label>
-					{errorMessage !== null ? (
+					{versionConflict && isEditing && task !== undefined ? (
+						<p className="text-sm text-destructive" role="alert">
+							{`This task was updated by another user. The form now shows version ${String(
+								task.version,
+							)}, so review what changed and re-apply your edits before saving again.`}
+						</p>
+					) : errorMessage !== null ? (
 						<p className="text-sm text-destructive" role="alert">
 							{errorMessage}
 						</p>
