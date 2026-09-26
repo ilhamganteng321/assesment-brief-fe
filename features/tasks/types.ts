@@ -120,3 +120,40 @@ export type UpdateTaskPayload = {
 	clientVisible?: boolean;
 	version: number;
 };
+
+/**
+ * The auditable columns. Mirrors the server allow-list, so the UI can never
+ * render a label for a field the API would not record.
+ */
+export const AUDITED_COLUMNS = [
+	"title",
+	"description",
+	"assignedToId",
+	"status",
+	"priority",
+	"department",
+	"clientVisible",
+	"deletedAt",
+] as const;
+
+export type AuditedColumn = (typeof AUDITED_COLUMNS)[number];
+
+/**
+ * One immutable change record. `oldValue` and `newValue` are the serialized
+ * column values; `null` means the column was or became empty, never the string
+ * "null".
+ */
+export type TaskAuditLog = {
+	id: string;
+	taskId: string;
+	userId: string;
+	changedColumn: AuditedColumn;
+	oldValue: string | null;
+	newValue: string | null;
+	createdAt: string;
+};
+
+export type TaskAuditLogList = {
+	auditLogs: TaskAuditLog[];
+	pagination: Pagination;
+};

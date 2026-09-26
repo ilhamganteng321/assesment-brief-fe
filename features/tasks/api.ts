@@ -7,6 +7,7 @@ import type {
 	CreateTaskDependencyInput,
 	CreateTaskPayload,
 	Task,
+	TaskAuditLogList,
 	TaskDependency,
 	TaskDependencyResponse,
 	TaskDetail,
@@ -93,4 +94,21 @@ export async function deleteTaskDependency(
 	dependencyId: string,
 ): Promise<void> {
 	await apiClient.delete(`/tasks/${taskId}/dependencies/${dependencyId}`);
+}
+
+/**
+ * The immutable change history for one task. Read-only by design: the API
+ * exposes no mutation route for audit records, so this module has no
+ * counterpart that could rewrite history.
+ */
+export async function listTaskAuditLogs(
+	projectId: string,
+	taskId: string,
+	signal?: AbortSignal,
+): Promise<TaskAuditLogList> {
+	const response = await apiClient.get<ApiSuccessResponse<TaskAuditLogList>>(
+		`/projects/${projectId}/tasks/${taskId}/audit-logs`,
+		{ signal },
+	);
+	return response.data.data;
 }

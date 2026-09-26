@@ -22,6 +22,7 @@ import {
 	getTaskStatusLabel,
 	getTaskStatusVariant,
 } from "../labels";
+import { TaskActivityPanel } from "./task-activity-panel";
 import { TaskDependencyPanel } from "./task-dependency-panel";
 
 type TaskDetailSectionProps = {
@@ -168,6 +169,7 @@ export function TaskDetailSection({ taskId }: TaskDetailSectionProps) {
 			</Card>
 
 			<TaskDependencyPanel task={task} />
+			<TaskActivityPanel task={task} />
 		</div>
 	);
 }

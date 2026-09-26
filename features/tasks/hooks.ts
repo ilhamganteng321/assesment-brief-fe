@@ -16,6 +16,7 @@ import {
 	deleteTaskDependency as deleteTaskDependencyRequest,
 	deleteTask as deleteTaskRequest,
 	getTask as getTaskRequest,
+	listTaskAuditLogs as listTaskAuditLogsRequest,
 	listTaskDependencies as listTaskDependenciesRequest,
 	listTasks as listTasksRequest,
 	updateTask as updateTaskRequest,
@@ -35,6 +36,8 @@ export const taskKeys = {
 	detail: (taskId: string) => [...taskKeys.details(), taskId] as const,
 	dependencies: (taskId: string) =>
 		[...taskKeys.details(), taskId, "dependencies"] as const,
+	auditLogs: (taskId: string) =>
+		[...taskKeys.details(), taskId, "audit-logs"] as const,
 };
 
 function isClientRole(role: UserRole | undefined): boolean {
@@ -62,6 +65,9 @@ async function invalidateTaskGraph(
 	await Promise.all([
 		queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) }),
 		queryClient.invalidateQueries({ queryKey: taskKeys.dependencies(taskId) }),
+		// Every successful task mutation appends to the trail, so a change has to
+		// refresh the history alongside the row it produced.
+		queryClient.invalidateQueries({ queryKey: taskKeys.auditLogs(taskId) }),
 	]);
 }
 
@@ -152,6 +158,29 @@ export function useTaskDependencies(
 		queryKey: taskKeys.dependencies(taskId),
 		queryFn: async ({ signal }) => listTaskDependenciesRequest(taskId, signal),
 		enabled: Boolean(role) && !isClientRole(role) && taskId.length > 0,
+	});
+}
+
+/**
+ * The task's change history. Disabled for clients because the API refuses them:
+ * the trail names internal actors and holds internal field values, so there is
+ * nothing a client is allowed to see. Hiding the section is a convenience only,
+ * the 403 is what enforces it.
+ */
+export function useTaskAuditLogs(
+	role: UserRole | undefined,
+	projectId: string,
+	taskId: string,
+) {
+	return useQuery({
+		queryKey: taskKeys.auditLogs(taskId),
+		queryFn: async ({ signal }) =>
+			listTaskAuditLogsRequest(projectId, taskId, signal),
+		enabled:
+			Boolean(role) &&
+			!isClientRole(role) &&
+			projectId.length > 0 &&
+			taskId.length > 0,
 	});
 }
 

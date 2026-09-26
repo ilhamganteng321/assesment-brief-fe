@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+	getAuditColumnLabel,
+	getAuditValueLabel,
 	getTaskDepartmentLabel,
 	getTaskPriorityLabel,
 	getTaskStatusLabel,
@@ -18,6 +20,7 @@ import {
 	toUpdateTaskPayload,
 } from "../features/tasks/schemas.ts";
 import {
+	AUDITED_COLUMNS,
 	TASK_DEPARTMENTS,
 	TASK_PRIORITIES,
 	TASK_STATUSES,
@@ -384,5 +387,53 @@ describe("task labels", () => {
 			"Frontend",
 			"Backend",
 		]);
+	});
+});
+
+describe("audit labels", () => {
+	test("names every column the server can record", () => {
+		expect(AUDITED_COLUMNS.map(getAuditColumnLabel)).toEqual([
+			"Title",
+			"Description",
+			"Assignee",
+			"Status",
+			"Priority",
+			"Department",
+			"Client visibility",
+			"Task deleted",
+		]);
+	});
+
+	test("translates stored enum values back into UI wording", () => {
+		expect(getAuditValueLabel("status", "IN_PROGRESS")).toBe("In progress");
+		expect(getAuditValueLabel("priority", "URGENT")).toBe("Urgent");
+		expect(getAuditValueLabel("department", "UI_UX")).toBe("UI/UX");
+		expect(getAuditValueLabel("clientVisible", "true")).toBe("Visible");
+		expect(getAuditValueLabel("clientVisible", "false")).toBe("Hidden");
+	});
+
+	// A nullable column is stored as SQL NULL, which the API returns as JSON
+	// null. Rendering that as the text "null" would misreport an empty field as
+	// a literal value.
+	test("renders a null value as empty rather than the string null", () => {
+		expect(getAuditValueLabel("description", null)).toBe("—");
+		expect(getAuditValueLabel("assignedToId", null)).toBe("—");
+		expect(getAuditValueLabel("deletedAt", null)).toBe("—");
+	});
+
+	// The trail is append-only, so a value written by a newer build that this
+	// build has no label for still has to render rather than throw.
+	test("falls back to the raw value for an unknown enum member", () => {
+		expect(getAuditValueLabel("status", "ARCHIVED")).toBe("ARCHIVED");
+		expect(getAuditValueLabel("priority", "CRITICAL")).toBe("CRITICAL");
+	});
+
+	test("keeps free text values verbatim", () => {
+		expect(getAuditValueLabel("title", "Build dashboard")).toBe(
+			"Build dashboard",
+		);
+		expect(getAuditValueLabel("deletedAt", "2026-09-26T04:12:42.1028231")).toBe(
+			"2026-09-26T04:12:42.1028231",
+		);
 	});
 });
