@@ -30,6 +30,9 @@ export const DEFAULT_TASK_ORDER_KEY: TaskOrderKey = "createdAt";
 export const DEFAULT_TASK_ORDER_RULE: OrderRule = "desc";
 export const DEFAULT_TASK_SEARCH_FIELD = "title";
 
+export const TASK_VIEWS = ["list", "board"] as const;
+export type TaskView = (typeof TASK_VIEWS)[number];
+
 export type TaskListState = {
 	search: string;
 	status: TaskStatus | "all";
@@ -40,6 +43,8 @@ export type TaskListState = {
 	orderRule: OrderRule;
 	page: number;
 	rows: number;
+	/** The list keeps search and paging; the board is the dependency view. */
+	view: TaskView;
 };
 
 export const DEFAULT_TASK_LIST_STATE: TaskListState = {
@@ -52,6 +57,7 @@ export const DEFAULT_TASK_LIST_STATE: TaskListState = {
 	orderRule: DEFAULT_TASK_ORDER_RULE,
 	page: DEFAULT_PAGE,
 	rows: DEFAULT_ROWS,
+	view: "list",
 };
 
 const positiveIntSchema = z.coerce.number().int().positive();
@@ -85,6 +91,19 @@ function readEnum<T extends string>(
 		return fallback;
 	}
 
+	const result = z.enum(values).safeParse(raw);
+
+	return result.success ? result.data : fallback;
+}
+
+/** The same parse, for a state field that has no "all" option. */
+function readEnumValue<T extends string>(
+	searchParams: URLSearchParams,
+	name: string,
+	values: readonly T[],
+	fallback: T,
+): T {
+	const raw = searchParams.get(name);
 	const result = z.enum(values).safeParse(raw);
 
 	return result.success ? result.data : fallback;
@@ -126,6 +145,7 @@ export function parseTaskListState(
 		orderRule: readOrderRule(searchParams),
 		page: readPositiveInt(searchParams, "page", DEFAULT_PAGE),
 		rows: readPositiveInt(searchParams, "rows", DEFAULT_ROWS),
+		view: readEnumValue(searchParams, "view", TASK_VIEWS, "list"),
 	};
 }
 
@@ -167,6 +187,10 @@ export function serializeTaskListState(state: TaskListState): URLSearchParams {
 
 	if (state.rows !== DEFAULT_ROWS) {
 		searchParams.set("rows", String(state.rows));
+	}
+
+	if (state.view !== "list") {
+		searchParams.set("view", state.view);
 	}
 
 	return searchParams;

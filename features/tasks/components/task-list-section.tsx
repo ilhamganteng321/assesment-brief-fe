@@ -8,9 +8,11 @@ import { DataPagination } from "@/components/ui/data-pagination";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { useAuth } from "@/features/auth/provider";
+import { getApiErrorMessage } from "@/lib/api/error";
 import { DEFAULT_ROWS } from "@/lib/api/query/types";
 
-import { useTaskList } from "../hooks";
+import { getStartBlockedReason } from "../dependency";
+import { useTaskList, useUpdateTask } from "../hooks";
 import {
 	DEFAULT_TASK_LIST_STATE,
 	DEFAULT_TASK_ORDER_KEY,
@@ -23,6 +25,7 @@ import {
 	withTaskPageReset,
 } from "../list-state";
 import type { Task, TaskAssigneeSummary } from "../types";
+import { TaskBoard, TaskBoardEmpty } from "./task-board";
 import { TaskCard } from "./task-card";
 import { TaskFormDialog } from "./task-form-dialog";
 import { TaskListSkeleton } from "./task-list-skeleton";
@@ -33,11 +36,14 @@ type TaskListSectionProps = {
 	projectId?: string;
 	/** Eligible assignees for the task form. */
 	assignees?: readonly TaskAssigneeSummary[];
+	/** Display name for the scoped project. */
+	projectName?: string;
 };
 
 export function TaskListSection({
 	projectId = "",
 	assignees = [],
+	projectName,
 }: TaskListSectionProps) {
 	const { user } = useAuth();
 	const role = user?.role;
@@ -61,7 +67,12 @@ export function TaskListSection({
 	const [editingTask, setEditingTask] = useState<Task | undefined>();
 	const queryParams = useMemo(() => toTaskListQueryParams(state), [state]);
 	const query = useTaskList(role, queryParams);
+	const startTask = useUpdateTask();
 	const canManage = role === "PM";
+	const assigneeNames = useMemo(
+		() => new Map(assignees.map((assignee) => [assignee.id, assignee.name])),
+		[assignees],
+	);
 
 	const applyState = useCallback(
 		(nextState: TaskListState) => {
@@ -81,6 +92,15 @@ export function TaskListSection({
 	const openEditDialog = (task: Task) => {
 		setEditingTask(task);
 		setFormOpen(true);
+	};
+
+	// The server owns the guard, so the button is only a convenience: the same
+	// request would be rejected with TASK_BLOCKED if it were forced through.
+	const start = (task: Task) => {
+		startTask.mutate({
+			taskId: task.id,
+			payload: { status: "IN_PROGRESS", version: task.version },
+		});
 	};
 
 	if (!role) {
@@ -136,41 +156,76 @@ export function TaskListSection({
 				onStatusChange={(status) =>
 					applyState(withTaskPageReset(state, { status }))
 				}
+				onViewChange={(view) => applyState({ ...state, view })}
 			/>
+			{startTask.isError ? (
+				<p className="text-sm text-destructive">
+					{getApiErrorMessage(startTask.error)}
+				</p>
+			) : null}
 			{tasks.length === 0 ? (
-				<EmptyState
-					action={
-						hasCriteria ? (
-							<button
-								className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-								type="button"
-								onClick={() =>
-									applyState({
-										...DEFAULT_TASK_LIST_STATE,
-										projectId: state.projectId,
-									})
-								}
-							>
-								Clear filters
-							</button>
-						) : canManage && state.projectId.length > 0 ? (
-							<button
-								className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-								type="button"
-								onClick={openCreateDialog}
-							>
-								Create the first task
-							</button>
-						) : undefined
-					}
-					icon={<KanbanIcon size={22} />}
-					title={hasCriteria ? "No matching tasks" : "No tasks yet"}
-					description={
-						hasCriteria
-							? "No tasks match the current search and filters."
-							: "Tasks you can see will appear here."
-					}
-				/>
+				state.view === "board" ? (
+					<TaskBoardEmpty
+						canCreate={canManage && state.projectId.length > 0}
+						hasCriteria={hasCriteria}
+						onClearFilters={() =>
+							applyState({
+								...DEFAULT_TASK_LIST_STATE,
+								projectId: state.projectId,
+								view: "board",
+							})
+						}
+						onCreate={openCreateDialog}
+					/>
+				) : (
+					<EmptyState
+						action={
+							hasCriteria ? (
+								<button
+									className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+									type="button"
+									onClick={() =>
+										applyState({
+											...DEFAULT_TASK_LIST_STATE,
+											projectId: state.projectId,
+										})
+									}
+								>
+									Clear filters
+								</button>
+							) : canManage && state.projectId.length > 0 ? (
+								<button
+									className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+									type="button"
+									onClick={openCreateDialog}
+								>
+									Create the first task
+								</button>
+							) : undefined
+						}
+						icon={<KanbanIcon size={22} />}
+						title={hasCriteria ? "No matching tasks" : "No tasks yet"}
+						description={
+							hasCriteria
+								? "No tasks match the current search and filters."
+								: "Tasks you can see will appear here."
+						}
+					/>
+				)
+			) : state.view === "board" ? (
+				<div
+					className={`transition-opacity ${
+						query.isFetching ? "opacity-60" : "opacity-100"
+					}`}
+				>
+					<TaskBoard
+						assigneeNames={assigneeNames}
+						projectName={projectName}
+						tasks={tasks}
+						onEdit={canManage ? openEditDialog : undefined}
+						onStart={canManage ? start : undefined}
+					/>
+				</div>
 			) : (
 				<>
 					<ul
@@ -181,8 +236,12 @@ export function TaskListSection({
 						{tasks.map((task) => (
 							<li key={task.id}>
 								<TaskCard
+									assigneeName={assigneeNames.get(task.assignedToId ?? "")}
+									projectName={projectName}
+									startBlockedReason={getStartBlockedReason(task)}
 									task={task}
 									onEdit={canManage ? () => openEditDialog(task) : undefined}
+									onStart={canManage ? () => start(task) : undefined}
 								/>
 							</li>
 						))}

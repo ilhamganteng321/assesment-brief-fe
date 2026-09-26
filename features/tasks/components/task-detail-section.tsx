@@ -22,6 +22,7 @@ import {
 	getTaskStatusLabel,
 	getTaskStatusVariant,
 } from "../labels";
+import { TaskDependencyPanel } from "./task-dependency-panel";
 
 type TaskDetailSectionProps = {
 	taskId: string;
@@ -122,7 +123,18 @@ export function TaskDetailSection({ taskId }: TaskDetailSectionProps) {
 							</p>
 							<ul className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
 								{task.blockedBy.map((blocker) => (
-									<li key={blocker.taskId}>{blocker.title}</li>
+									<li key={blocker.id}>
+										{blocker.deleted ? (
+											<span className="line-through">{blocker.title}</span>
+										) : (
+											<Link
+												className="hover:underline"
+												href={`/tasks/${blocker.id}`}
+											>
+												{blocker.title}
+											</Link>
+										)}
+									</li>
 								))}
 							</ul>
 						</div>
@@ -154,6 +166,8 @@ export function TaskDetailSection({ taskId }: TaskDetailSectionProps) {
 					</dl>
 				</CardContent>
 			</Card>
+
+			<TaskDependencyPanel task={task} />
 		</div>
 	);
 }

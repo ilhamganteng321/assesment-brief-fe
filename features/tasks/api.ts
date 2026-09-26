@@ -4,7 +4,11 @@ import type { ListQueryParams } from "@/lib/api/query/types";
 import type { ApiSuccessResponse } from "@/lib/api/types";
 
 import type {
+	CreateTaskDependencyInput,
 	CreateTaskPayload,
+	Task,
+	TaskDependency,
+	TaskDependencyResponse,
 	TaskDetail,
 	TaskList,
 	UpdateTaskPayload,
@@ -31,12 +35,12 @@ export async function getTask(
 	return response.data.data.task;
 }
 
-export async function createTask(
-	payload: CreateTaskPayload,
-): Promise<TaskDetail> {
-	const response = await apiClient.post<
-		ApiSuccessResponse<{ task: TaskDetail }>
-	>("/tasks", payload);
+/** The flat create endpoint answers with the base task, not the detail view. */
+export async function createTask(payload: CreateTaskPayload): Promise<Task> {
+	const response = await apiClient.post<ApiSuccessResponse<{ task: Task }>>(
+		"/tasks",
+		payload,
+	);
 	return response.data.data.task;
 }
 
@@ -57,4 +61,36 @@ export async function deleteTask(
 	await apiClient.delete(`/tasks/${taskId}`, {
 		params: { version },
 	});
+}
+
+export async function listTaskDependencies(
+	taskId: string,
+	signal?: AbortSignal,
+): Promise<TaskDependencyResponse> {
+	const response = await apiClient.get<
+		ApiSuccessResponse<TaskDependencyResponse>
+	>(`/tasks/${taskId}/dependencies`, { signal });
+	return response.data.data;
+}
+
+/**
+ * `dependencyTaskId` is the *prerequisite* task, matching the server contract
+ * used by the nested `/projects/:projectId/tasks/:taskId/dependencies` route.
+ */
+export async function createTaskDependency(
+	taskId: string,
+	input: CreateTaskDependencyInput,
+): Promise<TaskDependency> {
+	const response = await apiClient.post<
+		ApiSuccessResponse<{ dependency: TaskDependency }>
+	>(`/tasks/${taskId}/dependencies`, input);
+	return response.data.data.dependency;
+}
+
+/** `dependencyId` is the prerequisite task id, exactly as listed by the API. */
+export async function deleteTaskDependency(
+	taskId: string,
+	dependencyId: string,
+): Promise<void> {
+	await apiClient.delete(`/tasks/${taskId}/dependencies/${dependencyId}`);
 }

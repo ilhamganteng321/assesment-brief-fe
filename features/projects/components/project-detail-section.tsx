@@ -265,7 +265,11 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 					<CardTitle>Tasks</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<TaskListSection assignees={taskAssignees} projectId={project.id} />
+					<TaskListSection
+						assignees={taskAssignees}
+						projectId={project.id}
+						projectName={project.name}
+					/>
 				</CardContent>
 			</Card>
 			{canManage ? (

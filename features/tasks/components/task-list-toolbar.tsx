@@ -26,6 +26,14 @@ export const TASK_ROWS_OPTIONS = [10, 20, 50, 100] as const;
 
 const ORDER_RULE_OPTIONS = ["asc", "desc"] as const;
 
+const VIEW_OPTIONS: ReadonlyArray<{
+	value: TaskListState["view"];
+	label: string;
+}> = [
+	{ value: "list", label: "List" },
+	{ value: "board", label: "Board" },
+];
+
 const SELECT_CLASS =
 	"h-9 rounded-lg border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
@@ -40,6 +48,7 @@ type TaskListToolbarProps = {
 	onOrderChange: (orderKey: TaskListState["orderKey"]) => void;
 	onOrderRuleChange: (orderRule: TaskListState["orderRule"]) => void;
 	onRowsChange: (rows: number) => void;
+	onViewChange: (view: TaskListState["view"]) => void;
 	onCreateClick: () => void;
 };
 
@@ -69,6 +78,7 @@ export function TaskListToolbar({
 	onOrderChange,
 	onOrderRuleChange,
 	onRowsChange,
+	onViewChange,
 	onCreateClick,
 }: TaskListToolbarProps) {
 	const [searchInput, setSearchInput] = useState(state.search);
@@ -201,6 +211,27 @@ export function TaskListToolbar({
 				</select>
 			</div>
 			<div className="flex items-center gap-3">
+				<fieldset
+					aria-label="Task view"
+					className="flex rounded-lg border p-0.5"
+				>
+					<legend className="sr-only">Task view</legend>
+					{VIEW_OPTIONS.map((option) => (
+						<button
+							key={option.value}
+							aria-pressed={state.view === option.value}
+							className={`min-h-8 rounded-md px-3 text-sm transition-colors ${
+								state.view === option.value
+									? "bg-primary text-primary-foreground"
+									: "text-muted-foreground hover:text-foreground"
+							}`}
+							type="button"
+							onClick={() => onViewChange(option.value)}
+						>
+							{option.label}
+						</button>
+					))}
+				</fieldset>
 				<span aria-live="polite" className="text-xs text-muted-foreground">
 					{isFetching ? "Updating..." : sortLabel}
 				</span>

@@ -29,6 +29,29 @@ export const PROJECT_STATUSES = [
 ] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
+/**
+ * A prerequisite exactly as the server returns it. `deleted` is always present
+ * for internal callers so a soft deleted prerequisite can be recognised and
+ * explained instead of silently disappearing from the graph.
+ */
+export type TaskDependency = {
+	id: string;
+	title: string;
+	status: TaskStatus;
+	deleted: boolean;
+};
+
+/** The blocking prerequisites named on a task itself. */
+export type BlockedTaskInformation = TaskDependency;
+
+export type TaskDependencyResponse = {
+	dependencies: TaskDependency[];
+};
+
+export type CreateTaskDependencyInput = {
+	dependencyTaskId: string;
+};
+
 export type Task = {
 	id: string;
 	projectId: string;
@@ -43,7 +66,7 @@ export type Task = {
 	createdAt: string;
 	updatedAt: string;
 	isBlocked: boolean;
-	blockedBy: Array<{ taskId: string; title: string }>;
+	blockedBy: BlockedTaskInformation[];
 };
 
 export type TaskProjectSummary = {
