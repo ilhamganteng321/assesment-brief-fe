@@ -5,37 +5,47 @@ import Link from "next/link";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getTaskStatusLabel } from "@/features/tasks/labels";
 import type { Task } from "@/features/tasks/types";
 
+type ProjectBlockedTasksProps = {
+	tasks: readonly Task[];
+	pending?: boolean;
+	error?: unknown;
+	onRetry?: () => void;
+	/** Exact count from the project metrics, for the heading. */
+	totalFromServer?: number;
+	limit?: number;
+};
+
 /**
  * The project's blocked tasks, with the reason each one is stuck.
  *
- * Both the blocked flag and the prerequisite list come from the task payload the
- * API already computed, so this panel re-derives nothing: it cannot disagree with
- * the board about which tasks are blocked, and it never walks the dependency
- * graph itself.
+ * The list is fetched through the server's `isBlocked` filter rather than by
+ * scanning a page of tasks in the browser, so it is the real set of blocked tasks
+ * and not "whichever ones happened to be on the page". Both the blocked flag and
+ * the prerequisite list come from the task payload the API already computed, so
+ * this panel re-derives nothing: it cannot disagree with the board about which
+ * tasks are blocked, and it never walks the dependency graph itself.
  */
 export function ProjectBlockedTasks({
 	tasks,
 	pending,
+	error,
+	onRetry,
+	totalFromServer,
 	limit = 5,
-}: {
-	tasks: readonly Task[];
-	pending?: boolean;
-	limit?: number;
-}) {
-	const blocked = tasks.filter((task) => task.isBlocked);
-	const shown = blocked.slice(0, limit);
+}: ProjectBlockedTasksProps) {
+	const shown = tasks.slice(0, limit);
+	const count = totalFromServer ?? tasks.length;
 
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>
-					{blocked.length > 0
-						? `Blocked tasks (${String(blocked.length)})`
-						: "Blocked tasks"}
+					{count > 0 ? `Blocked tasks (${String(count)})` : "Blocked tasks"}
 				</CardTitle>
 			</CardHeader>
 			<CardContent aria-busy={pending === true}>
@@ -44,11 +54,17 @@ export function ProjectBlockedTasks({
 						<Skeleton className="h-12 w-full" />
 						<Skeleton className="h-12 w-full" />
 					</div>
-				) : blocked.length === 0 ? (
+				) : error !== undefined ? (
+					<QueryErrorState
+						error={error}
+						title="Unable to load blocked tasks"
+						onRetry={onRetry ?? (() => undefined)}
+					/>
+				) : tasks.length === 0 ? (
 					<EmptyState
 						icon={<ProhibitIcon size={22} />}
-						title="No blocked tasks"
-						description="All currently available tasks can proceed."
+						title="All clear"
+						description="There are currently no blocked tasks."
 					/>
 				) : (
 					<ul className="flex flex-col divide-y">
@@ -67,9 +83,9 @@ export function ProjectBlockedTasks({
 								{blockedReason(task)}
 							</li>
 						))}
-						{blocked.length > shown.length ? (
+						{tasks.length > shown.length ? (
 							<li className="pt-3 text-xs text-muted-foreground">
-								{`and ${String(blocked.length - shown.length)} more`}
+								{`and ${String(tasks.length - shown.length)} more`}
 							</li>
 						) : null}
 					</ul>

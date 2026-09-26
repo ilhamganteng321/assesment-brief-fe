@@ -53,6 +53,7 @@ type TaskListToolbarProps = {
 	onPriorityChange: (priority: TaskListState["priority"]) => void;
 	onDepartmentChange: (department: TaskListState["department"]) => void;
 	onAssigneeChange: (assignedToId: TaskListState["assignedToId"]) => void;
+	onBlockedChange: (blocked: TaskListState["blocked"]) => void;
 	onClientVisibleChange: (
 		clientVisible: TaskListState["clientVisible"],
 	) => void;
@@ -88,6 +89,7 @@ export function TaskListToolbar({
 	onPriorityChange,
 	onDepartmentChange,
 	onAssigneeChange,
+	onBlockedChange,
 	onClientVisibleChange,
 	onOrderChange,
 	onOrderRuleChange,
@@ -198,6 +200,18 @@ export function TaskListToolbar({
 					<option value="any">Any visibility</option>
 					<option value="only">Client visible only</option>
 					<option value="hidden">Internal only</option>
+				</select>
+				<select
+					aria-label="Filter tasks by block state"
+					className={SELECT_CLASS}
+					value={state.blocked}
+					onChange={(event) =>
+						onBlockedChange(event.target.value as TaskListState["blocked"])
+					}
+				>
+					<option value="any">Any block state</option>
+					<option value="only">Blocked only</option>
+					<option value="clear">Not blocked</option>
 				</select>
 				<select
 					aria-label="Filter tasks by assignee"

@@ -41,6 +41,11 @@ export type TaskListState = {
 	/** `"any"` also covers unassigned tasks, which `""` cannot express. */
 	assignedToId: string | "any" | "unassigned";
 	clientVisible: "any" | "only" | "hidden";
+	/**
+	 * The calculated block state. `"only"` and `"clear"` avoid inventing a
+	 * boolean that has to be inverted on the way to the API.
+	 */
+	blocked: "any" | "only" | "clear";
 	projectId: string;
 	orderKey: TaskOrderKey;
 	orderRule: OrderRule;
@@ -57,6 +62,7 @@ export const DEFAULT_TASK_LIST_STATE: TaskListState = {
 	department: "all",
 	assignedToId: "any",
 	clientVisible: "any",
+	blocked: "any",
 	projectId: "",
 	orderKey: DEFAULT_TASK_ORDER_KEY,
 	orderRule: DEFAULT_TASK_ORDER_RULE,
@@ -142,6 +148,9 @@ type AssigneeFilter = (typeof ASSIGNEE_FILTER_VALUES)[number];
 const VISIBILITY_FILTER_VALUES = ["any", "only", "hidden"] as const;
 export type VisibilityFilter = (typeof VISIBILITY_FILTER_VALUES)[number];
 
+const BLOCKED_FILTER_VALUES = ["any", "only", "clear"] as const;
+export type BlockedFilter = (typeof BLOCKED_FILTER_VALUES)[number];
+
 function readAssigneeFilter(
 	searchParams: URLSearchParams,
 ): string | AssigneeFilter {
@@ -165,6 +174,13 @@ function readVisibilityFilter(searchParams: URLSearchParams): VisibilityFilter {
 	return result.success ? result.data : "any";
 }
 
+function readBlockedFilter(searchParams: URLSearchParams): BlockedFilter {
+	const result = z
+		.enum(BLOCKED_FILTER_VALUES)
+		.safeParse(searchParams.get("blocked") ?? undefined);
+	return result.success ? result.data : "any";
+}
+
 export function parseTaskListState(
 	searchParams: URLSearchParams,
 ): TaskListState {
@@ -175,6 +191,7 @@ export function parseTaskListState(
 		department: readEnum(searchParams, "department", TASK_DEPARTMENTS, "all"),
 		assignedToId: readAssigneeFilter(searchParams),
 		clientVisible: readVisibilityFilter(searchParams),
+		blocked: readBlockedFilter(searchParams),
 		projectId: readProjectId(searchParams),
 		orderKey: readOrderKey(searchParams),
 		orderRule: readOrderRule(searchParams),
@@ -210,6 +227,10 @@ export function serializeTaskListState(state: TaskListState): URLSearchParams {
 
 	if (state.clientVisible !== "any") {
 		searchParams.set("visible", state.clientVisible);
+	}
+
+	if (state.blocked !== "any") {
+		searchParams.set("blocked", state.blocked);
 	}
 
 	if (state.projectId.length > 0) {
@@ -271,6 +292,13 @@ export function toTaskListQueryParams(state: TaskListState): ListQueryParams {
 
 	if (state.clientVisible !== "any") {
 		filters.clientVisible = state.clientVisible === "only";
+	}
+
+	// The block state is a real server-side filter. The server derives it from the
+	// dependency graph and resolves it before counting, so the reported total is
+	// the number of matching tasks rather than the size of the page.
+	if (state.blocked !== "any") {
+		filters.isBlocked = state.blocked === "only";
 	}
 
 	if (state.projectId.length > 0) {

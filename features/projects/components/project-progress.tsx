@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 /**
@@ -59,13 +61,18 @@ export type MetricTile = {
 	value: number;
 	/** Rendered under the number, e.g. "of 24 tasks". */
 	hint?: string;
+	/** Set when the tile opens a filtered task board. */
+	href?: string;
 };
 
 /**
  * A row of headline counts.
  *
  * `aria-busy` is set while loading so a screen reader announces the region as
- * updating rather than reading a wall of zeroes as if they were real.
+ * updating rather than reading a wall of zeroes as if they were real. A tile with
+ * an `href` becomes a link so the drilldown is keyboard reachable and can be
+ * opened in a new tab; one without stays a plain figure, because a summary of
+ * everything has nothing to drill into.
  */
 export function MetricTiles({
 	title,
@@ -83,17 +90,33 @@ export function MetricTiles({
 			</CardHeader>
 			<CardContent aria-busy={pending === true}>
 				<dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-					{tiles.map((tile) => (
-						<div className="rounded-lg border p-3" key={tile.label}>
-							<dt className="text-xs text-muted-foreground">{tile.label}</dt>
-							<dd className="font-heading text-2xl font-semibold">
-								{pending ? <Skeleton className="h-7 w-10" /> : tile.value}
-							</dd>
-							{tile.hint ? (
-								<p className="text-xs text-muted-foreground">{tile.hint}</p>
-							) : null}
-						</div>
-					))}
+					{tiles.map((tile) => {
+						const body = (
+							<>
+								<dt className="text-xs text-muted-foreground">{tile.label}</dt>
+								<dd className="font-heading text-2xl font-semibold">
+									{pending ? <Skeleton className="h-7 w-10" /> : tile.value}
+								</dd>
+								{tile.hint ? (
+									<p className="text-xs text-muted-foreground">{tile.hint}</p>
+								) : null}
+							</>
+						);
+
+						return tile.href === undefined ? (
+							<div className="rounded-lg border p-3" key={tile.label}>
+								{body}
+							</div>
+						) : (
+							<Link
+								className="rounded-lg border p-3 transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+								href={tile.href}
+								key={tile.label}
+							>
+								{body}
+							</Link>
+						);
+					})}
 				</dl>
 			</CardContent>
 		</Card>

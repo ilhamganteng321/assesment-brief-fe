@@ -1,11 +1,13 @@
 "use client";
 
-import { BuildingsIcon, KanbanIcon } from "@phosphor-icons/react";
+import { BuildingsIcon, KanbanIcon, PlusIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useMemo } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { UserRole } from "@/features/auth/types";
 import { getStartBlockedReason } from "@/features/tasks/dependency";
@@ -14,6 +16,8 @@ import { getTaskStatusLabel } from "@/features/tasks/labels";
 import type { Task, TaskStatus } from "@/features/tasks/types";
 
 import { useProjectActivity, useProjectMetrics } from "../hooks";
+import { DepartmentProgress } from "./department-progress";
+import { buildMetricDrilldownHref, toMetricCards } from "./metric-cards";
 import { ProjectActivity } from "./project-activity";
 import { ProjectBlockedTasks } from "./project-blocked-tasks";
 import {
@@ -23,6 +27,9 @@ import {
 	StatusDistribution,
 } from "./project-progress";
 
+/** Rows scanned for the two sections that need real task rows. */
+const SECTION_SCAN_ROWS = 100;
+/** The blocked list is filtered server-side, so this bounds only the render. */
 const BLOCKED_SCAN_ROWS = 100;
 
 type ProjectDashboardProps = {
@@ -30,49 +37,82 @@ type ProjectDashboardProps = {
 	role: UserRole | undefined;
 	/** The signed-in user's id, used to scope "My tasks" server-side. */
 	currentUserId: string | undefined;
+	/**
+	 * Where the "create a task" call to action points. It is a link rather than a
+	 * second dialog so there is only one create path on the page to keep
+	 * permission-correct. Omitted for anyone the backend would refuse.
+	 */
+	onCreateTaskHref?: string;
 };
 
 /**
  * The project dashboard.
  *
- * Every number here comes from the server: `/metrics` supplies the counts and the
- * progress percentage, and the task list supplies the rows behind the blocked and
- * "my tasks" sections. Nothing is totalled up in the browser, because a total the
- * client computes is a business rule the client invented, and it would silently
- * disagree with the API the moment the page size or the filter changed.
+ * Every number comes from the server: `/metrics` supplies the counts, the progress
+ * percentage, and the per-department breakdown, and the task list supplies the rows
+ * behind the blocked and "my tasks" sections. Nothing is totalled in the browser,
+ * because a total the client computes is a business rule the client invented and it
+ * would disagree with the API the moment the page size or a filter changed.
+ *
+ * Each section loads and fails on its own. A failed metrics call leaves the
+ * activity feed and the blocked list readable rather than blanking the page, and a
+ * failed activity call does not take the numbers down with it.
  */
 export function ProjectDashboard({
 	projectId,
 	role,
 	currentUserId,
+	onCreateTaskHref,
 }: ProjectDashboardProps) {
 	const isInternal = role === "INTERNAL";
+	const canCreate = role === "PM" && onCreateTaskHref !== undefined;
 	const metricsQuery = useProjectMetrics(role, projectId);
 	const activityQuery = useProjectActivity(role, projectId, 8);
 
-	// One page of the project's tasks, used for the two sections that need actual
-	// rows. The blocked list and "my tasks" are views over what the server already
-	// authorised, not separate fetches per section.
+	// One page of the project's tasks, used for the "my tasks" section. The
+	// blocked list gets its own query because it is filtered server-side, so it is
+	// the real set rather than whichever blocked tasks happened to land on a page.
 	const tasksQuery = useTaskList(role, {
 		filters: { projectId },
+		rows: SECTION_SCAN_ROWS,
+		orderKey: "updatedAt",
+		orderRule: "desc",
+	});
+	const blockedQuery = useTaskList(role, {
+		filters: { projectId, isBlocked: true },
 		rows: BLOCKED_SCAN_ROWS,
 		orderKey: "updatedAt",
 		orderRule: "desc",
 	});
 
 	const metrics = metricsQuery.data;
+	const metricsPending = metricsQuery.isPending;
+	const metricsFailed = metricsQuery.isError;
+
+	// A count of zero is a real answer, but only once the server has given one:
+	// before that the tiles render as skeletons rather than as "0 tasks".
 	const tiles = useMemo<readonly MetricTile[]>(() => {
 		if (metrics === undefined) {
 			return [];
 		}
-		return [
-			{ label: "Total tasks", value: metrics.tasks.total },
-			{ label: "Completed", value: metrics.tasks.completed },
-			{ label: "In progress", value: metrics.tasks.inProgress },
-			{ label: "Blocked", value: metrics.tasks.blocked },
-			{ label: "To do", value: metrics.tasks.todo },
-		];
-	}, [metrics]);
+		const cards = toMetricCards({
+			total: metrics.tasks.total,
+			completed: metrics.tasks.completed,
+			inProgress: metrics.tasks.inProgress,
+			blocked: metrics.tasks.blocked,
+			todo: metrics.tasks.todo,
+			loaded: !metricsPending,
+			canDrilldown: true,
+		});
+		return cards.map((card) => ({
+			label: card.label,
+			value: card.value,
+			...(card.hint === undefined ? {} : { hint: card.hint }),
+			...(card.drilldown === null
+				? {}
+				: { href: buildMetricDrilldownHref(projectId, card.drilldown) }),
+		}));
+	}, [metrics, metricsPending, projectId]);
 
 	const distribution = useMemo(() => {
 		if (metrics === undefined) {
@@ -114,44 +154,91 @@ export function ProjectDashboard({
 	}, [currentUserId, tasksQuery.data?.tasks]);
 
 	const tasksPending = tasksQuery.isPending;
-	const tasks = tasksQuery.data?.tasks ?? [];
+	const hasNoTasks =
+		!metricsPending && !metricsFailed && metrics?.tasks.total === 0;
 
 	return (
 		<div className="flex flex-col gap-6">
+			{hasNoTasks ? (
+				<Card>
+					<CardHeader>
+						<CardTitle>No tasks yet</CardTitle>
+					</CardHeader>
+					<CardContent className="flex flex-col items-start gap-3">
+						<p className="text-sm text-muted-foreground">
+							Create the first task to start tracking project progress.
+						</p>
+						{/* The call to action is offered only where the backend would
+						    accept it. Ticking a role check is presentation only, and
+						    the create endpoint still refuses anyone else. */}
+						{canCreate ? (
+							<Button
+								render={<Link href={onCreateTaskHref ?? "#project-tasks"} />}
+								type="button"
+							>
+								<PlusIcon aria-hidden="true" />
+								Create task
+							</Button>
+						) : null}
+					</CardContent>
+				</Card>
+			) : null}
+
 			<Card>
 				<CardHeader>
 					<CardTitle>Project progress</CardTitle>
 				</CardHeader>
 				<CardContent className="flex flex-col gap-3">
-					<ProgressBar
-						label="Overall progress"
-						percentage={metrics?.progress.percentage ?? 0}
-						pending={metricsQuery.isPending}
-					/>
-					<p className="text-sm text-muted-foreground">
-						{metricsQuery.isPending
-							? "Loading progress..."
-							: metrics === undefined
-								? "Progress is unavailable."
-								: `${String(metrics.progress.percentage)}% complete — ${String(
-										metrics.tasks.completed,
-									)} of ${String(metrics.tasks.total)} tasks done.`}
-					</p>
+					{metricsFailed ? (
+						<QueryErrorState
+							error={metricsQuery.error}
+							title="Unable to load project metrics"
+							onRetry={() => void metricsQuery.refetch()}
+						/>
+					) : (
+						<>
+							<ProgressBar
+								label="Overall progress"
+								percentage={metrics?.progress.percentage ?? 0}
+								pending={metricsPending}
+							/>
+							<p className="text-sm text-muted-foreground">
+								{metricsPending
+									? "Loading progress..."
+									: metrics === undefined
+										? "Progress is unavailable."
+										: `${String(metrics.progress.percentage)}% complete — ${String(
+												metrics.tasks.completed,
+											)} of ${String(metrics.tasks.total)} tasks done.`}
+							</p>
+						</>
+					)}
 				</CardContent>
 			</Card>
 
-			<MetricTiles
-				title="Task metrics"
-				tiles={tiles}
-				pending={metricsQuery.isPending}
-			/>
+			{metricsFailed ? null : (
+				<MetricTiles
+					title="Task metrics"
+					tiles={tiles}
+					pending={metricsPending}
+				/>
+			)}
 
-			<StatusDistribution
-				title="Task status distribution"
-				rows={distribution}
-				total={metrics?.tasks.total ?? 0}
-				pending={metricsQuery.isPending}
-			/>
+			{metricsFailed ? null : (
+				<StatusDistribution
+					title="Task status distribution"
+					rows={distribution}
+					total={metrics?.tasks.total ?? 0}
+					pending={metricsPending}
+				/>
+			)}
+
+			{metricsFailed ? null : (
+				<DepartmentProgress
+					rows={metrics?.byDepartment ?? []}
+					pending={metricsPending}
+				/>
+			)}
 
 			{isInternal ? (
 				<MyTasksSection
@@ -161,7 +248,15 @@ export function ProjectDashboard({
 				/>
 			) : null}
 
-			<ProjectBlockedTasks pending={tasksPending} tasks={tasks} />
+			<ProjectBlockedTasks
+				error={blockedQuery.isError ? blockedQuery.error : undefined}
+				pending={blockedQuery.isPending}
+				tasks={blockedQuery.data?.tasks ?? []}
+				totalFromServer={metrics?.tasks.blocked}
+				onRetry={
+					blockedQuery.isError ? () => void blockedQuery.refetch() : undefined
+				}
+			/>
 
 			<ProjectActivity
 				entries={activityQuery.data?.activity ?? []}
@@ -221,7 +316,7 @@ function MyTasksSection({
 						title="Nothing assigned to you"
 						description={
 							totalFromServer > 0
-								? "No tasks on this project's first page are assigned to you."
+								? "No tasks on this project's most recently updated page are assigned to you."
 								: "This project has no tasks yet."
 						}
 					/>
@@ -253,7 +348,7 @@ function MyTasksSection({
 						))}
 						<p className="flex items-center gap-1.5 text-xs text-muted-foreground">
 							<BuildingsIcon aria-hidden="true" />
-							Showing the {String(BLOCKED_SCAN_ROWS)} most recently updated
+							Showing the {String(SECTION_SCAN_ROWS)} most recently updated
 							tasks in this project. Open the task board for the full list.
 						</p>
 					</div>

@@ -150,6 +150,7 @@ export function TaskListSection({
 		state.department !== "all" ||
 		state.assignedToId !== "any" ||
 		state.clientVisible !== "any" ||
+		state.blocked !== "any" ||
 		state.orderKey !== DEFAULT_TASK_ORDER_KEY ||
 		state.orderRule !== DEFAULT_TASK_ORDER_RULE ||
 		state.rows !== DEFAULT_ROWS;
@@ -163,6 +164,9 @@ export function TaskListSection({
 				state={state}
 				onAssigneeChange={(assignedToId) =>
 					applyState(withTaskPageReset(state, { assignedToId }))
+				}
+				onBlockedChange={(blocked) =>
+					applyState(withTaskPageReset(state, { blocked }))
 				}
 				onClientVisibleChange={(clientVisible) =>
 					applyState(withTaskPageReset(state, { clientVisible }))

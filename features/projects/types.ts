@@ -27,6 +27,15 @@ export const USER_DEPARTMENTS = [
 ] as const;
 export type UserDepartment = (typeof USER_DEPARTMENTS)[number];
 
+/** Departments that may own a task; the backend excludes `CLIENT`. */
+export const TASK_DEPARTMENTS = [
+	"PRODUCT",
+	"UI_UX",
+	"FRONTEND",
+	"BACKEND",
+] as const;
+export type TaskDepartment = (typeof TASK_DEPARTMENTS)[number];
+
 export type Project = {
 	id: string;
 	name: string;
@@ -96,6 +105,18 @@ export type ProjectMetrics = {
 		percentage: number;
 	};
 	tasks: ProjectTaskMetrics;
+	byDepartment: ProjectDepartmentMetrics[];
+};
+
+export type ProjectDepartmentMetrics = {
+	department: TaskDepartment;
+	total: number;
+	completed: number;
+	inProgress: number;
+	todo: number;
+	blocked: number;
+	/** Completed share for this department, computed by the server. */
+	progressPercentage: number;
 };
 
 export type ProjectMetricsDetail = {

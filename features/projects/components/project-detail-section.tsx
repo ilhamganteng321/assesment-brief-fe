@@ -265,8 +265,12 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 				currentUserId={user?.id}
 				projectId={project.id}
 				role={role}
+				// Points at the task board further down this page rather than opening
+				// a second create dialog. The board already owns that affordance, and
+				// one create path is easier to keep permission-correct than two.
+				onCreateTaskHref="#project-tasks"
 			/>
-			<Card>
+			<Card id="project-tasks">
 				<CardHeader>
 					<CardTitle>Tasks</CardTitle>
 				</CardHeader>
