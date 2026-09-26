@@ -1,6 +1,8 @@
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
+import Link from "next/link";
+import type { ComponentProps } from "react";
 
 const buttonVariants = cva(
 	"group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -54,4 +56,34 @@ function Button({
 	);
 }
 
-export { Button, buttonVariants };
+/**
+ * A navigation link that looks like a button.
+ *
+ * `Button` is Base UI's *button* primitive, so it assumes it is rendering a real
+ * `<button>`. Pointing its `render` prop at a `Link` produces an `<a>`, which
+ * trips that assumption in development. The documented workaround,
+ * `nativeButton={false}`, is worse than the warning: Base UI then adds
+ * `role="button"`, which overrides the anchor's link role, so assistive technology
+ * announces a navigation link as a button, and it takes over Enter activation.
+ *
+ * Rendering the anchor directly avoids the mismatch entirely. The button styling
+ * comes from the same `buttonVariants`, so this looks identical while keeping the
+ * semantics a link needs: an `href` that can be copied, middle-clicked, or opened
+ * in a new tab, and the correct role.
+ */
+function ButtonLink({
+	className,
+	variant = "default",
+	size = "default",
+	...props
+}: ComponentProps<typeof Link> & VariantProps<typeof buttonVariants>) {
+	return (
+		<Link
+			className={cn(buttonVariants({ variant, size, className }))}
+			data-slot="button"
+			{...props}
+		/>
+	);
+}
+
+export { Button, ButtonLink, buttonVariants };

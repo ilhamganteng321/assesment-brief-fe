@@ -1,11 +1,10 @@
 "use client";
 
 import { ArrowLeftIcon } from "@phosphor-icons/react";
-import Link from "next/link";
 
 import { PageBreadcrumbs, PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
@@ -86,14 +85,10 @@ export function ClientTaskDetailSection({
 		<div className="flex flex-col gap-6">
 			<PageHeader
 				actions={
-					<Button
-						render={<Link href={`/projects/${projectId}`} />}
-						type="button"
-						variant="outline"
-					>
+					<ButtonLink href={`/projects/${projectId}`} variant="outline">
 						<ArrowLeftIcon aria-hidden="true" />
 						Back to project
-					</Button>
+					</ButtonLink>
 				}
 				title={task.title}
 				description="Shared with you by your project team."

@@ -11,7 +11,7 @@ import { useMemo, useState } from "react";
 
 import { PageBreadcrumbs, PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
@@ -126,14 +126,10 @@ export function TaskDetailSection({ taskId }: TaskDetailSectionProps) {
 								Edit task
 							</Button>
 						) : null}
-						<Button
-							render={<Link href="/tasks" />}
-							type="button"
-							variant="outline"
-						>
+						<ButtonLink href="/tasks" variant="outline">
 							<ArrowLeftIcon aria-hidden="true" />
 							All tasks
-						</Button>
+						</ButtonLink>
 					</div>
 				}
 				title={task.title}

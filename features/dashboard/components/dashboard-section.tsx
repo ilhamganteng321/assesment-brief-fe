@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import {
 	Card,
 	CardContent,
@@ -121,13 +121,13 @@ function InternalDashboard() {
 									))}
 								</ul>
 							)}
-							<Button
+							<ButtonLink
 								className="mt-4 min-h-11"
-								render={<Link href="/projects" />}
+								href="/projects"
 								variant="outline"
 							>
 								View all projects
-							</Button>
+							</ButtonLink>
 						</CardContent>
 					</Card>
 				</>
@@ -208,14 +208,14 @@ function ClientDashboard() {
 									{taskTotals.blocked === 1 ? "task is" : "tasks are"} currently
 									blocked.
 								</p>
-								<Button
+								<ButtonLink
 									className="min-h-11"
-									render={<Link href="/projects" />}
+									href="/projects"
 									size="sm"
 									variant="outline"
 								>
 									Review projects
-								</Button>
+								</ButtonLink>
 							</CardContent>
 						</Card>
 					) : null}

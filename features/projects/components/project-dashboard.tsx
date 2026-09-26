@@ -4,7 +4,7 @@ import { BuildingsIcon, KanbanIcon, PlusIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useMemo } from "react";
 
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
@@ -172,13 +172,10 @@ export function ProjectDashboard({
 						    accept it. Ticking a role check is presentation only, and
 						    the create endpoint still refuses anyone else. */}
 						{canCreate ? (
-							<Button
-								render={<Link href={onCreateTaskHref ?? "#project-tasks"} />}
-								type="button"
-							>
+							<ButtonLink href={onCreateTaskHref ?? "#project-tasks"}>
 								<PlusIcon aria-hidden="true" />
 								Create task
-							</Button>
+							</ButtonLink>
 						) : null}
 					</CardContent>
 				</Card>
