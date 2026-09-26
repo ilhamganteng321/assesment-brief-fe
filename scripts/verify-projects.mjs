@@ -13,6 +13,10 @@ import { normalizeApiError } from "../lib/api/error";
 import { buildQueryParams } from "../lib/api/query/serialize";
 import { clearAccessToken, setAccessToken } from "../lib/api/token-storage";
 
+import { installRateLimitRetry } from "./install-rate-limit-retry.mjs";
+
+installRateLimitRetry();
+
 const PROJECT_STATUSES = new Set([
 	"PLANNING",
 	"ACTIVE",

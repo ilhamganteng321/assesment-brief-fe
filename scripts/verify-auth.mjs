@@ -3,6 +3,10 @@ import { apiClient } from "../lib/api/client";
 import { normalizeApiError } from "../lib/api/error";
 import { clearAccessToken, setAccessToken } from "../lib/api/token-storage";
 
+import { installRateLimitRetry } from "./install-rate-limit-retry.mjs";
+
+installRateLimitRetry();
+
 const seededUsers = [
 	["pm@aurora.demo", "PM", "PRODUCT"],
 	["uiux@aurora.demo", "INTERNAL", "UI_UX"],

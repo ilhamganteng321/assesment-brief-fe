@@ -1,0 +1,13 @@
+# Normalise line endings in the repository and in every checkout.
+#
+# Biome formats to LF, so a Windows checkout that materialises CRLF leaves the
+# working tree permanently "unformatted" against the committed content: the
+# files are byte-identical to HEAD yet `biome check` reports fourteen of them as
+# needing reformatting, and `pnpm lint` fails.
+#
+# `eol=lf` makes the checkout match the stored blob on every platform, which is
+# what keeps `lint` and `build` green for a reviewer on Windows as well.
+* text=auto eol=lf
+
+# Generated dependency lockfile: large, machine-written, never hand-edited.
+pnpm-lock.yaml linguist-generated
