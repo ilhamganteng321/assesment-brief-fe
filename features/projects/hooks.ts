@@ -13,8 +13,11 @@ import {
 	archiveProject,
 	createProject,
 	getClientProjects,
+	getClientProjectTask,
 	getClientProjectTasks,
 	getProject,
+	getProjectActivity,
+	getProjectMetrics,
 	listProjectMembers,
 	listProjects,
 	updateProject,
@@ -44,6 +47,20 @@ export const projectKeys = {
 	detail: (projectId: string) => [...projectKeys.details(), projectId] as const,
 	members: (projectId: string) =>
 		[...projectKeys.details(), projectId, "members"] as const,
+	metrics: (projectId: string) =>
+		[...projectKeys.details(), projectId, "metrics"] as const,
+	activity: (projectId: string) =>
+		[...projectKeys.details(), projectId, "activity"] as const,
+	/**
+	 * Every project-scoped read for one project.
+	 *
+	 * A task mutation changes the task rows, the counts derived from them, and
+	 * the history they append to, so invalidating this prefix refreshes the whole
+	 * dashboard in one call. It is still scoped to a single project rather than
+	 * the entire cache.
+	 */
+	dashboard: (projectId: string) =>
+		[...projectKeys.details(), projectId] as const,
 };
 
 function isClientRole(role: UserRole | undefined): boolean {
@@ -122,6 +139,62 @@ export function useClientProjectTasks(
 			getClientProjectTasks(projectId, query, signal),
 		enabled: isClientRole(role) && Boolean(projectId),
 		placeholderData: keepPreviousData,
+	});
+}
+
+/**
+ * Project counts for the dashboard.
+ *
+ * Internal only: a client guest reads the scoped `/client/dashboard` payload
+ * instead, which is computed over client-visible tasks. Requesting this for a
+ * client would be answered with a 403, so the query is not attempted.
+ */
+export function useProjectMetrics(
+	role: UserRole | undefined,
+	projectId: string,
+) {
+	return useQuery({
+		queryKey: projectKeys.metrics(projectId),
+		queryFn: async ({ signal }) => getProjectMetrics(projectId, signal),
+		enabled: Boolean(role) && !isClientRole(role) && projectId.length > 0,
+	});
+}
+
+/** Recent project history, newest first. Internal only, like the metrics. */
+export function useProjectActivity(
+	role: UserRole | undefined,
+	projectId: string,
+	limit = 10,
+) {
+	return useQuery({
+		queryKey: projectKeys.activity(projectId),
+		queryFn: async ({ signal }) => getProjectActivity(projectId, limit, signal),
+		enabled: Boolean(role) && !isClientRole(role) && projectId.length > 0,
+	});
+}
+
+/**
+ * A single task as a client guest is allowed to see it.
+ *
+ * This deliberately reads `/client/...` rather than the internal task route, so
+ * the restricted projection comes from the server and the component has no
+ * internal field to accidentally render.
+ */
+export function useClientProjectTask(
+	role: UserRole | undefined,
+	projectId: string,
+	taskId: string,
+) {
+	return useQuery({
+		queryKey: [
+			...projectKeys.clientTaskLists(),
+			projectId,
+			"detail",
+			taskId,
+		] as const,
+		queryFn: async ({ signal }) =>
+			getClientProjectTask(projectId, taskId, signal),
+		enabled: isClientRole(role) && projectId.length > 0 && taskId.length > 0,
 	});
 }
 

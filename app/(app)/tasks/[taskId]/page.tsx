@@ -1,3 +1,4 @@
+import { InternalOnlyRoute } from "@/features/auth/route-guard";
 import { TaskDetailSection } from "@/features/tasks/components/task-detail-section";
 
 type TaskDetailPageProps = {
@@ -7,5 +8,9 @@ type TaskDetailPageProps = {
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 	const { taskId } = await params;
 
-	return <TaskDetailSection taskId={taskId} />;
+	return (
+		<InternalOnlyRoute>
+			<TaskDetailSection taskId={taskId} />
+		</InternalOnlyRoute>
+	);
 }

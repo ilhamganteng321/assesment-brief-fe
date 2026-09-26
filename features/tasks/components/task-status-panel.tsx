@@ -59,6 +59,7 @@ export function TaskStatusPanel({ task }: TaskStatusPanelProps) {
 		updateTask.mutate(
 			{
 				taskId: task.id,
+				projectId: task.projectId,
 				payload: { status: targetStatus, version: task.version },
 			},
 			{

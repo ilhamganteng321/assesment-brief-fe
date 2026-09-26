@@ -5,12 +5,16 @@ import type { ApiSuccessResponse } from "@/lib/api/types";
 
 import type {
 	ClientProjectList,
+	ClientTask,
 	ClientTaskList,
 	ClientTaskListQuery,
 	CreateProjectPayload,
+	ProjectActivityList,
 	ProjectDetail,
 	ProjectList,
 	ProjectMemberList,
+	ProjectMetrics,
+	ProjectMetricsDetail,
 	UpdateProjectPayload,
 } from "./types";
 
@@ -95,4 +99,53 @@ export async function getClientProjectTasks(
 		{ params: query, signal },
 	);
 	return response.data.data;
+}
+
+/**
+ * Project task counts, straight from the server.
+ *
+ * The dashboard deliberately does not total up a page of task rows: the counts
+ * come from database aggregates so the numbers cannot drift from the filter and
+ * paging rules, and so a large project does not have to be downloaded to draw a
+ * summary.
+ */
+export async function getProjectMetrics(
+	projectId: string,
+	signal?: AbortSignal,
+): Promise<ProjectMetrics> {
+	const response = await apiClient.get<
+		ApiSuccessResponse<ProjectMetricsDetail>
+	>(`/projects/${projectId}/metrics`, { signal });
+	return response.data.data.metrics;
+}
+
+/** The project's newest audit entries, newest first. */
+export async function getProjectActivity(
+	projectId: string,
+	limit = 10,
+	signal?: AbortSignal,
+): Promise<ProjectActivityList> {
+	const response = await apiClient.get<ApiSuccessResponse<ProjectActivityList>>(
+		`/projects/${projectId}/activity`,
+		{ params: { page: 1, limit }, signal },
+	);
+	return response.data.data;
+}
+
+/**
+ * The client's own copy of one task.
+ *
+ * A separate function from `getTask` on purpose: this is the only task read a
+ * client guest is allowed to make, and it returns a projection without an
+ * assignee, a department, a version, or any audit history.
+ */
+export async function getClientProjectTask(
+	projectId: string,
+	taskId: string,
+	signal?: AbortSignal,
+): Promise<ClientTask> {
+	const response = await apiClient.get<
+		ApiSuccessResponse<{ task: ClientTask }>
+	>(`/client/projects/${projectId}/tasks/${taskId}`, { signal });
+	return response.data.data.task;
 }

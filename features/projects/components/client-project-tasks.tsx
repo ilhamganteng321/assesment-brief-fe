@@ -2,6 +2,7 @@
 
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { cn } from "cn";
+import Link from "next/link";
 import { type FormEvent, useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -125,24 +126,26 @@ export function ClientProjectTasks({ projectId }: ClientProjectTasksProps) {
 				{query.isSuccess && tasks.length > 0 ? (
 					<ul className="flex flex-col gap-3">
 						{tasks.map((task) => (
-							<li
-								key={task.id}
-								className="flex flex-col gap-2 rounded-lg border bg-background p-4"
-							>
-								<div className="flex flex-wrap items-center justify-between gap-2">
-									<p className="font-medium">{task.title}</p>
-									<Badge variant={getTaskStatusVariant(task.status)}>
-										{getTaskStatusLabel(task.status)}
-									</Badge>
-								</div>
-								<p
-									className={cn(
-										"text-sm text-muted-foreground",
-										!task.description && "italic",
-									)}
+							<li key={task.id}>
+								<Link
+									className="flex flex-col gap-2 rounded-lg border bg-background p-4 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+									href={`/projects/${projectId}/tasks/${task.id}`}
 								>
-									{task.description ?? "No description provided."}
-								</p>
+									<div className="flex flex-wrap items-center justify-between gap-2">
+										<p className="font-medium">{task.title}</p>
+										<Badge variant={getTaskStatusVariant(task.status)}>
+											{getTaskStatusLabel(task.status)}
+										</Badge>
+									</div>
+									<p
+										className={cn(
+											"text-sm text-muted-foreground",
+											!task.description && "italic",
+										)}
+									>
+										{task.description ?? "No description provided."}
+									</p>
+								</Link>
 							</li>
 						))}
 					</ul>

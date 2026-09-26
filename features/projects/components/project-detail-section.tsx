@@ -30,6 +30,7 @@ import {
 import { getProjectStatusLabel, getProjectStatusVariant } from "../labels";
 import { ClientProjectTasks } from "./client-project-tasks";
 import { ProjectArchiveDialog } from "./project-archive-dialog";
+import { ProjectDashboard } from "./project-dashboard";
 import { ProjectDetailSkeleton } from "./project-detail-skeleton";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { ProjectMembersCard } from "./project-members-card";
@@ -259,6 +260,11 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 			<ProjectMembersCard
 				isLoading={membersQuery.isPending}
 				members={membersQuery.data}
+			/>
+			<ProjectDashboard
+				currentUserId={user?.id}
+				projectId={project.id}
+				role={role}
 			/>
 			<Card>
 				<CardHeader>

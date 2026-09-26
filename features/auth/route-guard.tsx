@@ -114,3 +114,42 @@ export function RoleVisibility({
 
 	return children;
 }
+
+type InternalRouteProps = {
+	children: ReactNode;
+};
+
+/**
+ * Keeps a client guest out of the internal-only surfaces.
+ *
+ * This is usability, not security. The flat task API and the internal project
+ * endpoints refuse a `CLIENT` outright, so a client guest who types `/tasks` gets
+ * a 403 from the server no matter what this component renders. Redirecting here
+ * only spares them a dead end; the server remains the thing that actually
+ * enforces it, and a client who ignores the redirect still gets nothing.
+ */
+export function InternalOnlyRoute({ children }: InternalRouteProps) {
+	const router = useRouter();
+	const { user, isLoading } = useAuth();
+
+	useEffect(() => {
+		if (!isLoading && user?.role === "CLIENT") {
+			router.replace("/dashboard");
+		}
+	}, [isLoading, router, user?.role]);
+
+	if (isLoading) {
+		return <AuthLoading className="min-h-svh" />;
+	}
+
+	if (user?.role === "CLIENT") {
+		return (
+			<AuthLoading
+				className="min-h-svh"
+				label="That area is not available to your account."
+			/>
+		);
+	}
+
+	return children;
+}

@@ -6,6 +6,10 @@ import {
 } from "@tanstack/react-query";
 
 import type { UserRole } from "@/features/auth/types";
+// The project query-key factory is imported rather than rebuilt here: invalidation
+// matches on key identity, so a second copy of the shape would silently stop
+// refreshing the dashboard the moment either side changed.
+import { projectKeys } from "@/features/projects/hooks";
 import { isConcurrentModificationError } from "@/lib/api/error";
 import { normalizeListQueryParams } from "@/lib/api/query/normalize";
 import type { ListQueryParams } from "@/lib/api/query/types";
@@ -71,6 +75,26 @@ async function invalidateTaskGraph(
 	]);
 }
 
+/**
+ * Refreshes a project dashboard after one of its tasks changed.
+ *
+ * A task write moves three things at once: the task rows, the counts the project
+ * metrics aggregate, and the history the activity feed shows. The invalidation is
+ * still scoped to the one project's query prefix rather than the whole cache, so
+ * an edit in one project does not refetch every other dashboard.
+ */
+export async function invalidateProjectDashboard(
+	queryClient: ReturnType<typeof useQueryClient>,
+	projectId: string,
+): Promise<void> {
+	if (projectId.length === 0) {
+		return;
+	}
+	await queryClient.invalidateQueries({
+		queryKey: projectKeys.dashboard(projectId),
+	});
+}
+
 export function useTaskList(
 	role: UserRole | undefined,
 	query: ListQueryParams,
@@ -105,27 +129,37 @@ export function useCreateTask(role: UserRole | undefined) {
 	});
 }
 
+type UpdateTaskVariables = {
+	taskId: string;
+	/** The owning project, so the dashboard can be refreshed too. */
+	projectId: string;
+	payload: UpdateTaskPayload;
+};
+
 export function useUpdateTask() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: ({
-			taskId,
-			payload,
-		}: {
-			taskId: string;
-			payload: UpdateTaskPayload;
-		}) => updateTaskRequest(taskId, payload),
-		onSuccess: async (_data, { taskId }) => {
-			await invalidateTaskGraph(queryClient, taskId);
+		// `projectId` is part of the variables because the invalidation handlers
+		// need it; the request itself is addressed by task id alone.
+		mutationFn: ({ taskId, payload }: UpdateTaskVariables) =>
+			updateTaskRequest(taskId, payload),
+		onSuccess: async (_data, { taskId, projectId }) => {
+			await Promise.all([
+				invalidateTaskGraph(queryClient, taskId),
+				invalidateProjectDashboard(queryClient, projectId),
+			]);
 		},
-		onError: async (error, { taskId }) => {
+		onError: async (error, { taskId, projectId }) => {
 			// A conflict means the submitted version was already stale, so the
 			// cached row is guaranteed wrong. Refetching is what puts the winning
 			// row (and its new version) back in the form; the mutation error is
 			// left intact so the dialog can still explain the rejection.
 			if (isConcurrentModificationError(error)) {
-				await invalidateTaskGraph(queryClient, taskId);
+				await Promise.all([
+					invalidateTaskGraph(queryClient, taskId),
+					invalidateProjectDashboard(queryClient, projectId),
+				]);
 			}
 		},
 	});

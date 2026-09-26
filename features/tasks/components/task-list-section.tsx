@@ -114,6 +114,7 @@ export function TaskListSection({
 	const start = (task: Task) => {
 		startTask.mutate({
 			taskId: task.id,
+			projectId: task.projectId,
 			payload: { status: "IN_PROGRESS", version: task.version },
 		});
 	};

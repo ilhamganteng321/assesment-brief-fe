@@ -76,6 +76,49 @@ export type ClientTaskListQuery = {
 	status?: TaskStatus;
 };
 
+/**
+ * Task counts for one project, as the server computed them.
+ *
+ * `blocked` comes from the dependency graph rather than the stored `BLOCKED`
+ * status, which is why it is a separate number from the others.
+ */
+export type ProjectTaskMetrics = {
+	total: number;
+	completed: number;
+	inProgress: number;
+	todo: number;
+	blocked: number;
+};
+
+export type ProjectMetrics = {
+	projectId: string;
+	progress: {
+		percentage: number;
+	};
+	tasks: ProjectTaskMetrics;
+};
+
+export type ProjectMetricsDetail = {
+	metrics: ProjectMetrics;
+};
+
+/** One recent change in a project's history. */
+export type ProjectActivityEntry = {
+	id: string;
+	taskId: string;
+	taskTitle: string;
+	userId: string;
+	changedColumn: string;
+	oldValue: string | null;
+	newValue: string | null;
+	createdAt: string;
+};
+
+export type ProjectActivityList = {
+	activity: ProjectActivityEntry[];
+	pagination: Pagination;
+};
+
 export type ProjectList = {
 	projects: Project[];
 	pagination: Pagination;

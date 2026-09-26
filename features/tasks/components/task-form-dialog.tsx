@@ -173,6 +173,7 @@ export function TaskFormDialog({
 
 				await updateTask.mutateAsync({
 					taskId: task.id,
+					projectId: task.projectId,
 					payload: toUpdateTaskPayload(
 						values,
 						task.version,
