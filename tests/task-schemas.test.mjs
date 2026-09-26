@@ -10,6 +10,7 @@ import {
 	DEFAULT_TASK_LIST_STATE,
 	parseTaskListState,
 	serializeTaskListState,
+	toTaskListQueryParams,
 } from "../features/tasks/list-state.ts";
 import {
 	findAssigneeDepartmentConflict,
@@ -240,6 +241,49 @@ describe("toUpdateTaskPayload", () => {
 			description: "Updated description",
 		});
 	});
+
+	// A field the viewer is not allowed to change must never reach the payload,
+	// otherwise the request is guaranteed to come back as a 403.
+	test("a locked field is dropped from the payload even when it changed", () => {
+		const original = toTaskFormValues({ description: "PM text" });
+		const editable = new Set(["title", "status"]);
+
+		const payload = toUpdateTaskPayload(
+			{ ...original, description: "Internal rewrite", title: "Renamed" },
+			4,
+			original,
+			editable,
+		);
+
+		expect(payload).toEqual({ version: 4, title: "Renamed" });
+		expect(payload).not.toHaveProperty("description");
+	});
+
+	test("a locked-only change is not treated as a reason to submit", () => {
+		const original = toTaskFormValues({ description: "PM text" });
+		const editable = new Set(["title", "status"]);
+
+		expect(
+			hasTaskFormChanges(
+				{ ...original, description: "Internal rewrite" },
+				original,
+				editable,
+			),
+		).toBe(false);
+	});
+
+	test("an editable change alongside a locked one is still submitted", () => {
+		const original = toTaskFormValues({ description: "PM text" });
+		const editable = new Set(["title", "status"]);
+
+		expect(
+			hasTaskFormChanges(
+				{ ...original, description: "Internal rewrite", status: "DONE" },
+				original,
+				editable,
+			),
+		).toBe(true);
+	});
 });
 
 describe("hasTaskFormChanges", () => {
@@ -248,7 +292,6 @@ describe("hasTaskFormChanges", () => {
 
 		expect(hasTaskFormChanges(values, { ...values })).toBe(false);
 	});
-
 	test("detects a priority change", () => {
 		const original = toTaskFormValues();
 
@@ -358,6 +401,85 @@ describe("task list state", () => {
 
 	test("omits defaults from the serialized URL", () => {
 		expect(serializeTaskListState(DEFAULT_TASK_LIST_STATE).toString()).toBe("");
+	});
+});
+
+describe("task list filters", () => {
+	test("defaults both new filters to unrestricted", () => {
+		const parsed = parseTaskListState(new URLSearchParams(""));
+
+		expect(parsed.assignedToId).toBe("any");
+		expect(parsed.clientVisible).toBe("any");
+	});
+
+	test("round-trips a specific assignee through the URL", () => {
+		const assigneeId = "11111111-1111-4111-8111-111111111111";
+		const state = {
+			...DEFAULT_TASK_LIST_STATE,
+			assignedToId: assigneeId,
+			clientVisible: "only",
+		};
+
+		const parsed = parseTaskListState(serializeTaskListState(state));
+
+		expect(parsed.assignedToId).toBe(assigneeId);
+		expect(parsed.clientVisible).toBe("only");
+	});
+
+	test("keeps the unassigned keyword, which is not a uuid", () => {
+		const parsed = parseTaskListState(
+			new URLSearchParams("assignee=unassigned"),
+		);
+
+		expect(parsed.assignedToId).toBe("unassigned");
+	});
+
+	test("falls back to any for a malformed assignee", () => {
+		expect(
+			parseTaskListState(new URLSearchParams("assignee=not-a-uuid"))
+				.assignedToId,
+		).toBe("any");
+	});
+
+	test("ignores an unknown visibility keyword", () => {
+		expect(
+			parseTaskListState(new URLSearchParams("visible=maybe")).clientVisible,
+		).toBe("any");
+	});
+
+	// The API has no "unassigned" keyword, so it must not be smuggled into the
+	// filter object as one: that would be sent to the server and rejected.
+	test("sends a specific assignee as a server-side filter", () => {
+		const assigneeId = "11111111-1111-4111-8111-111111111111";
+		const params = toTaskListQueryParams({
+			...DEFAULT_TASK_LIST_STATE,
+			assignedToId: assigneeId,
+		});
+
+		expect(params.filters).toEqual({ assignedToId: assigneeId });
+	});
+
+	test("leaves unassigned out of the server query entirely", () => {
+		const params = toTaskListQueryParams({
+			...DEFAULT_TASK_LIST_STATE,
+			assignedToId: "unassigned",
+		});
+
+		expect(params.filters).toEqual({});
+	});
+
+	test("maps client visibility onto a boolean filter", () => {
+		const only = toTaskListQueryParams({
+			...DEFAULT_TASK_LIST_STATE,
+			clientVisible: "only",
+		});
+		const hidden = toTaskListQueryParams({
+			...DEFAULT_TASK_LIST_STATE,
+			clientVisible: "hidden",
+		});
+
+		expect(only.filters).toEqual({ clientVisible: true });
+		expect(hidden.filters).toEqual({ clientVisible: false });
 	});
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, PaperPlaneTiltIcon } from "@phosphor-icons/react";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useForm, useWatch } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/features/auth/provider";
 import type { UserRole } from "@/features/auth/types";
 import { zodResolver } from "@/features/auth/zod-resolver";
 import {
@@ -29,9 +30,11 @@ import {
 	getTaskPriorityLabel,
 	getTaskStatusLabel,
 } from "../labels";
+import { getEditableTaskFields } from "../permissions";
 import {
 	findAssigneeDepartmentConflict,
 	hasTaskFormChanges,
+	type TaskFormField,
 	type TaskFormValues,
 	taskFormSchema,
 	toCreateTaskPayload,
@@ -65,6 +68,8 @@ export function TaskFormDialog({
 	task,
 	assignees = [],
 }: TaskFormDialogProps) {
+	const { user } = useAuth();
+	const currentUserId = user?.id;
 	const isEditing = task !== undefined;
 	const createTask = useCreateTask(role);
 	const updateTask = useUpdateTask();
@@ -83,6 +88,29 @@ export function TaskFormDialog({
 				},
 	);
 	const defaults = isEditing ? editDefaults : createDefaults;
+
+	// Which fields this viewer may change. A PM editing a task gets the lot; an
+	// internal user assigned to it gets the title and the status only. The
+	// remaining inputs stay on the form as read-only so the values are still
+	// visible, but they cannot be edited and they never reach the payload.
+	const editableFields = useMemo(() => {
+		if (task === undefined) {
+			return new Set<TaskFormField>([
+				"title",
+				"description",
+				"assignedToId",
+				"status",
+				"priority",
+				"department",
+				"clientVisible",
+			]);
+		}
+		return getEditableTaskFields({ role, id: currentUserId }, task);
+	}, [task, role, currentUserId]);
+	const isEditable = useCallback(
+		(field: TaskFormField) => editableFields.has(field),
+		[editableFields],
+	);
 
 	const {
 		control,
@@ -138,14 +166,19 @@ export function TaskFormDialog({
 
 		try {
 			if (task !== undefined) {
-				if (!hasTaskFormChanges(values, editDefaults)) {
+				if (!hasTaskFormChanges(values, editDefaults, editableFields)) {
 					handleOpenChange(false);
 					return;
 				}
 
 				await updateTask.mutateAsync({
 					taskId: task.id,
-					payload: toUpdateTaskPayload(values, task.version, editDefaults),
+					payload: toUpdateTaskPayload(
+						values,
+						task.version,
+						editDefaults,
+						editableFields,
+					),
 				});
 			} else {
 				await createTask.mutateAsync(toCreateTaskPayload(values, projectId));
@@ -165,6 +198,11 @@ export function TaskFormDialog({
 	// An assigned task cannot be unassigned through the update payload, so the
 	// empty option is only offered when clearing it is actually possible.
 	const canClearAssignee = !isEditing || !editDefaults.assignedToId;
+	// Locked fields are rendered but not editable, with the reason spelled out
+	// rather than leaving a dead input that looks like a bug.
+	const lockedMessage = isEditing
+		? "Only a product manager can change this field."
+		: null;
 
 	return (
 		<DialogRoot onOpenChange={handleOpenChange} open={open}>
@@ -183,6 +221,7 @@ export function TaskFormDialog({
 						<Input
 							aria-invalid={errors.title !== undefined}
 							autoFocus
+							disabled={!isEditable("title")}
 							id="task-title"
 							placeholder="Ship the search endpoint"
 							{...register("title")}
@@ -195,6 +234,7 @@ export function TaskFormDialog({
 						<Label htmlFor="task-description">Description</Label>
 						<Textarea
 							aria-invalid={errors.description !== undefined}
+							disabled={!isEditable("description")}
 							id="task-description"
 							placeholder="Optional task summary"
 							{...register("description")}
@@ -210,7 +250,8 @@ export function TaskFormDialog({
 							<Label htmlFor="task-department">Department</Label>
 							<select
 								aria-invalid={errors.department !== undefined}
-								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive"
+								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={!isEditable("department")}
 								id="task-department"
 								{...register("department")}
 							>
@@ -230,7 +271,8 @@ export function TaskFormDialog({
 							<Label htmlFor="task-priority">Priority</Label>
 							<select
 								aria-invalid={errors.priority !== undefined}
-								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive"
+								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={!isEditable("priority")}
 								id="task-priority"
 								{...register("priority")}
 							>
@@ -254,7 +296,8 @@ export function TaskFormDialog({
 								aria-invalid={
 									errors.assignedToId !== undefined || conflict !== null
 								}
-								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive"
+								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={!isEditable("assignedToId")}
 								id="task-assignee"
 								{...register("assignedToId")}
 							>
@@ -282,7 +325,8 @@ export function TaskFormDialog({
 							<Label htmlFor="task-status">Status</Label>
 							<select
 								aria-invalid={errors.status !== undefined}
-								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive"
+								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={!isEditable("status")}
 								id="task-status"
 								{...register("status")}
 							>
@@ -301,13 +345,17 @@ export function TaskFormDialog({
 					</div>
 					<label className="flex items-center gap-2 text-sm">
 						<input
-							className="size-4 rounded border"
+							className="size-4 rounded border disabled:cursor-not-allowed disabled:opacity-60"
+							disabled={!isEditable("clientVisible")}
 							id="task-client-visible"
 							type="checkbox"
 							{...register("clientVisible")}
 						/>
 						Visible to client
 					</label>
+					{isEditing && !isEditable("description") && lockedMessage !== null ? (
+						<p className="text-xs text-muted-foreground">{lockedMessage}</p>
+					) : null}
 					{versionConflict && isEditing && task !== undefined ? (
 						<p className="text-sm text-destructive" role="alert">
 							{`This task was updated by another user. The form now shows version ${String(

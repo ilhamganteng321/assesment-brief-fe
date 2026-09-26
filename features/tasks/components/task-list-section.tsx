@@ -77,6 +77,17 @@ export function TaskListSection({
 		() => new Map(assignees.map((assignee) => [assignee.id, assignee.name])),
 		[assignees],
 	);
+	// The API has no "unassigned" keyword, so that one filter narrows the page the
+	// server already authorised instead of being pushed into the query. Every
+	// other filter is a real server-side predicate.
+	const fetchedTasks = query.data?.tasks;
+	const visibleTasks = useMemo(
+		() =>
+			state.assignedToId === "unassigned"
+				? (fetchedTasks ?? []).filter((task) => task.assignedToId === null)
+				: (fetchedTasks ?? []),
+		[state.assignedToId, fetchedTasks],
+	);
 
 	const applyState = useCallback(
 		(nextState: TaskListState) => {
@@ -136,6 +147,8 @@ export function TaskListSection({
 		state.status !== "all" ||
 		state.priority !== "all" ||
 		state.department !== "all" ||
+		state.assignedToId !== "any" ||
+		state.clientVisible !== "any" ||
 		state.orderKey !== DEFAULT_TASK_ORDER_KEY ||
 		state.orderRule !== DEFAULT_TASK_ORDER_RULE ||
 		state.rows !== DEFAULT_ROWS;
@@ -143,9 +156,16 @@ export function TaskListSection({
 	return (
 		<div className="flex flex-col gap-6">
 			<TaskListToolbar
+				assignees={assignees}
 				canCreate={canManage && state.projectId.length > 0}
 				isFetching={query.isFetching}
 				state={state}
+				onAssigneeChange={(assignedToId) =>
+					applyState(withTaskPageReset(state, { assignedToId }))
+				}
+				onClientVisibleChange={(clientVisible) =>
+					applyState(withTaskPageReset(state, { clientVisible }))
+				}
 				onCreateClick={openCreateDialog}
 				onDepartmentChange={(department) =>
 					applyState(withTaskPageReset(state, { department }))
@@ -173,7 +193,7 @@ export function TaskListSection({
 					{getApiErrorMessage(startTask.error)}
 				</p>
 			) : null}
-			{tasks.length === 0 ? (
+			{visibleTasks.length === 0 ? (
 				state.view === "board" ? (
 					<TaskBoardEmpty
 						canCreate={canManage && state.projectId.length > 0}
@@ -231,7 +251,7 @@ export function TaskListSection({
 					<TaskBoard
 						assigneeNames={assigneeNames}
 						projectName={projectName}
-						tasks={tasks}
+						tasks={visibleTasks}
 						onEdit={canManage ? openEditDialog : undefined}
 						onStart={canManage ? start : undefined}
 					/>
@@ -243,7 +263,7 @@ export function TaskListSection({
 							query.isFetching ? "opacity-60" : "opacity-100"
 						}`}
 					>
-						{tasks.map((task) => (
+						{visibleTasks.map((task) => (
 							<li key={task.id}>
 								<TaskCard
 									assigneeName={assigneeNames.get(task.assignedToId ?? "")}

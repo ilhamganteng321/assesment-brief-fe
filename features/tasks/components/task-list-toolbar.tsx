@@ -20,7 +20,12 @@ import {
 	TASK_ORDER_KEYS,
 	type TaskListState,
 } from "../list-state";
-import { TASK_DEPARTMENTS, TASK_PRIORITIES, TASK_STATUSES } from "../types";
+import {
+	TASK_DEPARTMENTS,
+	TASK_PRIORITIES,
+	TASK_STATUSES,
+	type TaskAssigneeSummary,
+} from "../types";
 
 export const TASK_ROWS_OPTIONS = [10, 20, 50, 100] as const;
 
@@ -41,10 +46,16 @@ type TaskListToolbarProps = {
 	state: TaskListState;
 	isFetching: boolean;
 	canCreate: boolean;
+	/** Members offered by the assignee filter; empty hides the control. */
+	assignees?: readonly TaskAssigneeSummary[];
 	onSearchChange: (search: string) => void;
 	onStatusChange: (status: TaskListState["status"]) => void;
 	onPriorityChange: (priority: TaskListState["priority"]) => void;
 	onDepartmentChange: (department: TaskListState["department"]) => void;
+	onAssigneeChange: (assignedToId: TaskListState["assignedToId"]) => void;
+	onClientVisibleChange: (
+		clientVisible: TaskListState["clientVisible"],
+	) => void;
 	onOrderChange: (orderKey: TaskListState["orderKey"]) => void;
 	onOrderRuleChange: (orderRule: TaskListState["orderRule"]) => void;
 	onRowsChange: (rows: number) => void;
@@ -71,10 +82,13 @@ export function TaskListToolbar({
 	state,
 	isFetching,
 	canCreate,
+	assignees = [],
 	onSearchChange,
 	onStatusChange,
 	onPriorityChange,
 	onDepartmentChange,
+	onAssigneeChange,
+	onClientVisibleChange,
 	onOrderChange,
 	onOrderRuleChange,
 	onRowsChange,
@@ -168,6 +182,38 @@ export function TaskListToolbar({
 					{TASK_DEPARTMENTS.map((department) => (
 						<option key={department} value={department}>
 							{getTaskDepartmentLabel(department)}
+						</option>
+					))}
+				</select>
+				<select
+					aria-label="Filter tasks by client visibility"
+					className={SELECT_CLASS}
+					value={state.clientVisible}
+					onChange={(event) =>
+						onClientVisibleChange(
+							event.target.value as TaskListState["clientVisible"],
+						)
+					}
+				>
+					<option value="any">Any visibility</option>
+					<option value="only">Client visible only</option>
+					<option value="hidden">Internal only</option>
+				</select>
+				<select
+					aria-label="Filter tasks by assignee"
+					className={SELECT_CLASS}
+					value={state.assignedToId}
+					onChange={(event) =>
+						onAssigneeChange(
+							event.target.value as TaskListState["assignedToId"],
+						)
+					}
+				>
+					<option value="any">Anyone</option>
+					<option value="unassigned">Unassigned</option>
+					{assignees.map((assignee) => (
+						<option key={assignee.id} value={assignee.id}>
+							{assignee.name}
 						</option>
 					))}
 				</select>

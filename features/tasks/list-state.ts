@@ -38,6 +38,9 @@ export type TaskListState = {
 	status: TaskStatus | "all";
 	priority: TaskPriority | "all";
 	department: TaskDepartment | "all";
+	/** `"any"` also covers unassigned tasks, which `""` cannot express. */
+	assignedToId: string | "any" | "unassigned";
+	clientVisible: "any" | "only" | "hidden";
 	projectId: string;
 	orderKey: TaskOrderKey;
 	orderRule: OrderRule;
@@ -52,6 +55,8 @@ export const DEFAULT_TASK_LIST_STATE: TaskListState = {
 	status: "all",
 	priority: "all",
 	department: "all",
+	assignedToId: "any",
+	clientVisible: "any",
 	projectId: "",
 	orderKey: DEFAULT_TASK_ORDER_KEY,
 	orderRule: DEFAULT_TASK_ORDER_RULE,
@@ -128,8 +133,36 @@ function readOrderRule(searchParams: URLSearchParams): OrderRule {
 function readProjectId(searchParams: URLSearchParams): string {
 	const raw = searchParams.get("projectId");
 	const result = projectIdSchema.safeParse(raw);
-
 	return result.success ? result.data : "";
+}
+
+const ASSIGNEE_FILTER_VALUES = ["any", "unassigned"] as const;
+type AssigneeFilter = (typeof ASSIGNEE_FILTER_VALUES)[number];
+
+const VISIBILITY_FILTER_VALUES = ["any", "only", "hidden"] as const;
+export type VisibilityFilter = (typeof VISIBILITY_FILTER_VALUES)[number];
+
+function readAssigneeFilter(
+	searchParams: URLSearchParams,
+): string | AssigneeFilter {
+	const raw = searchParams.get("assignee");
+	if (raw === null) {
+		return "any";
+	}
+	// A uuid is a specific member; the two keywords cover the rest.
+	const asKeyword = (ASSIGNEE_FILTER_VALUES as readonly string[]).includes(raw);
+	if (asKeyword) {
+		return raw as AssigneeFilter;
+	}
+	const asUuid = projectIdSchema.safeParse(raw);
+	return asUuid.success ? asUuid.data : "any";
+}
+
+function readVisibilityFilter(searchParams: URLSearchParams): VisibilityFilter {
+	const result = z
+		.enum(VISIBILITY_FILTER_VALUES)
+		.safeParse(searchParams.get("visible") ?? undefined);
+	return result.success ? result.data : "any";
 }
 
 export function parseTaskListState(
@@ -140,6 +173,8 @@ export function parseTaskListState(
 		status: readEnum(searchParams, "status", TASK_STATUSES, "all"),
 		priority: readEnum(searchParams, "priority", TASK_PRIORITIES, "all"),
 		department: readEnum(searchParams, "department", TASK_DEPARTMENTS, "all"),
+		assignedToId: readAssigneeFilter(searchParams),
+		clientVisible: readVisibilityFilter(searchParams),
 		projectId: readProjectId(searchParams),
 		orderKey: readOrderKey(searchParams),
 		orderRule: readOrderRule(searchParams),
@@ -167,6 +202,14 @@ export function serializeTaskListState(state: TaskListState): URLSearchParams {
 
 	if (state.department !== "all") {
 		searchParams.set("department", state.department);
+	}
+
+	if (state.assignedToId !== "any") {
+		searchParams.set("assignee", state.assignedToId);
+	}
+
+	if (state.clientVisible !== "any") {
+		searchParams.set("visible", state.clientVisible);
 	}
 
 	if (state.projectId.length > 0) {
@@ -215,6 +258,19 @@ export function toTaskListQueryParams(state: TaskListState): ListQueryParams {
 
 	if (state.department !== "all") {
 		filters.department = state.department;
+	}
+
+	// "unassigned" cannot be sent as a filter value because the API has no such
+	// keyword, so it is applied here as a post-query narrowing instead. That is
+	// only sound because it is a strict subset: the server has already paged,
+	// ordered, and authorised the result, and the filter can only remove rows the
+	// caller is allowed to see. A specific assignee is a real server-side filter.
+	if (state.assignedToId !== "any" && state.assignedToId !== "unassigned") {
+		filters.assignedToId = state.assignedToId;
+	}
+
+	if (state.clientVisible !== "any") {
+		filters.clientVisible = state.clientVisible === "only";
 	}
 
 	if (state.projectId.length > 0) {

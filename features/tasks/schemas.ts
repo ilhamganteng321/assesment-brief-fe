@@ -95,29 +95,54 @@ export function toCreateTaskPayload(
 	};
 }
 
+/** The task fields a form submission can carry. */
+export const TASK_FORM_FIELDS = [
+	"title",
+	"description",
+	"assignedToId",
+	"status",
+	"priority",
+	"department",
+	"clientVisible",
+] as const;
+
+export type TaskFormField = (typeof TASK_FORM_FIELDS)[number];
+
 /**
  * Only changed fields plus the row version are sent, so a partial edit can never
  * silently reset a field the user did not touch.
+ *
+ * `editableFields` is the set this viewer is allowed to change. Anything outside
+ * it is dropped from the payload even if the form somehow produced a different
+ * value, which is what keeps an internal user from submitting a description edit
+ * the API would refuse. The backend still authorizes every field; this only
+ * avoids a guaranteed 403.
  */
 export function toUpdateTaskPayload(
 	values: TaskFormValues,
 	version: number,
 	original: TaskFormValues,
+	editableFields?: ReadonlySet<TaskFormField>,
 ): UpdateTaskPayload {
+	const may = (field: TaskFormField): boolean =>
+		editableFields === undefined || editableFields.has(field);
 	const payload: UpdateTaskPayload = { version };
 	const title = values.title.trim();
 	const description = values.description.trim();
 	const assignedToId = values.assignedToId?.trim() ?? "";
 
-	if (title !== original.title.trim()) {
+	if (may("title") && title !== original.title.trim()) {
 		payload.title = title;
 	}
 
-	if (description !== original.description.trim()) {
+	if (may("description") && description !== original.description.trim()) {
 		payload.description = description;
 	}
 
-	if (assignedToId !== (original.assignedToId?.trim() ?? "")) {
+	if (
+		may("assignedToId") &&
+		assignedToId !== (original.assignedToId?.trim() ?? "")
+	) {
 		if (assignedToId.length > 0) {
 			payload.assignedToId = assignedToId;
 		} else {
@@ -125,38 +150,49 @@ export function toUpdateTaskPayload(
 		}
 	}
 
-	if (values.status !== original.status) {
+	if (may("status") && values.status !== original.status) {
 		payload.status = values.status;
 	}
 
-	if (values.priority !== original.priority) {
+	if (may("priority") && values.priority !== original.priority) {
 		payload.priority = values.priority;
 	}
 
-	if (values.department !== original.department) {
+	if (may("department") && values.department !== original.department) {
 		payload.department = values.department;
 	}
 
-	if (values.clientVisible !== original.clientVisible) {
+	if (may("clientVisible") && values.clientVisible !== original.clientVisible) {
 		payload.clientVisible = values.clientVisible;
 	}
 
 	return payload;
 }
 
+/**
+ * Whether the form holds anything worth submitting. Non-editable fields are
+ * ignored, so a viewer who can only see a task is not blocked by a change they
+ * were never allowed to make.
+ */
 export function hasTaskFormChanges(
 	values: TaskFormValues,
 	original: TaskFormValues,
+	editableFields?: ReadonlySet<TaskFormField>,
 ): boolean {
+	const may = (field: TaskFormField): boolean =>
+		editableFields === undefined || editableFields.has(field);
+
 	return (
-		values.title.trim() !== original.title.trim() ||
-		values.description.trim() !== original.description.trim() ||
-		(values.assignedToId?.trim() ?? "") !==
-			(original.assignedToId?.trim() ?? "") ||
-		values.status !== original.status ||
-		values.priority !== original.priority ||
-		values.department !== original.department ||
-		values.clientVisible !== original.clientVisible
+		(may("title") && values.title.trim() !== original.title.trim()) ||
+		(may("description") &&
+			values.description.trim() !== original.description.trim()) ||
+		(may("assignedToId") &&
+			(values.assignedToId?.trim() ?? "") !==
+				(original.assignedToId?.trim() ?? "")) ||
+		(may("status") && values.status !== original.status) ||
+		(may("priority") && values.priority !== original.priority) ||
+		(may("department") && values.department !== original.department) ||
+		(may("clientVisible") && values.clientVisible !== original.clientVisible)
 	);
 }
 

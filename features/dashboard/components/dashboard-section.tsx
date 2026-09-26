@@ -136,6 +136,33 @@ function InternalDashboard() {
 	);
 }
 
+/**
+ * A labelled progress bar for the client view.
+ *
+ * The percentage is the one the client API returned; nothing is recomputed in the
+ * browser, and the filled portion is mirrored by the `aria-valuenow` attribute so
+ * the value is not communicated by colour alone.
+ */
+function ProgressBar({ percentage }: { percentage: number }) {
+	const value = Math.min(100, Math.max(0, Math.round(percentage)));
+
+	return (
+		<div
+			aria-label={`${String(value)}% complete`}
+			aria-valuemax={100}
+			aria-valuemin={0}
+			aria-valuenow={value}
+			className="h-2 w-full overflow-hidden rounded-full bg-muted"
+			role="progressbar"
+		>
+			<div
+				className="h-full rounded-full bg-primary transition-[width]"
+				style={{ width: `${String(value)}%` }}
+			/>
+		</div>
+	);
+}
+
 function ClientDashboard() {
 	const { user } = useAuth();
 	const projectsQuery = useClientProjectList(user?.role);
@@ -211,19 +238,25 @@ function ClientDashboard() {
 									{projects.map((project) => (
 										<li key={project.id}>
 											<Link
-												className="flex min-h-11 items-center justify-between gap-3 rounded-md py-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+												className="flex min-h-11 flex-col gap-2 rounded-md py-3 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:flex-row sm:items-center sm:justify-between sm:gap-3"
 												href={`/projects/${project.id}`}
 											>
 												<span className="font-medium">{project.name}</span>
-												<span className="text-sm text-muted-foreground">
-													{Math.min(
-														100,
-														Math.max(
-															0,
-															Math.round(project.progress.percentage),
-														),
-													)}
-													% complete
+												<span className="flex min-w-40 flex-1 flex-col gap-1 sm:max-w-56">
+													<ProgressBar
+														percentage={project.progress.percentage}
+													/>
+													<span className="text-xs text-muted-foreground">
+														{`${String(
+															Math.min(
+																100,
+																Math.max(
+																	0,
+																	Math.round(project.progress.percentage),
+																),
+															),
+														)}% complete`}
+													</span>
 												</span>
 											</Link>
 										</li>

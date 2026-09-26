@@ -42,6 +42,17 @@ export const apiClient = axios.create({
 	},
 });
 
+/**
+ * Whether the body is a multipart form.
+ *
+ * `FormData` has to keep the `Content-Type` the runtime generates, because that
+ * header is what carries the multipart boundary. Forcing it to JSON leaves the
+ * boundary off, and the server cannot decode the body at all.
+ */
+function isMultipartBody(data: unknown): boolean {
+	return typeof FormData !== "undefined" && data instanceof FormData;
+}
+
 apiClient.interceptors.request.use((config) => {
 	const baseURL = config.baseURL ?? getBackendUrl();
 
@@ -52,7 +63,12 @@ apiClient.interceptors.request.use((config) => {
 	}
 
 	config.baseURL = baseURL;
-	config.headers.set("Content-Type", "application/json");
+	if (isMultipartBody(config.data)) {
+		// Let the runtime write `multipart/form-data; boundary=...` itself.
+		config.headers.delete("Content-Type");
+	} else {
+		config.headers.set("Content-Type", "application/json");
+	}
 
 	const requestId = globalThis.crypto?.randomUUID?.();
 	if (requestId) {
