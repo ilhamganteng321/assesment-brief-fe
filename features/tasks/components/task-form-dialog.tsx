@@ -49,6 +49,7 @@ import {
 	type TaskAssigneeSummary,
 	type TaskDepartment,
 } from "../types";
+import { TaskAssigneeSelect } from "./task-assignee-select";
 
 type TaskFormDialogProps = {
 	role: UserRole | undefined;
@@ -196,9 +197,11 @@ export function TaskFormDialog({
 			: conflict === "department"
 				? "The assignee belongs to a different department than the task."
 				: null;
-	// An assigned task cannot be unassigned through the update payload, so the
-	// empty option is only offered when clearing it is actually possible.
-	const canClearAssignee = !isEditing || !editDefaults.assignedToId;
+	// The blank option is always offered. The update endpoint accepts an explicit
+	// `null`, so clearing an assignee is now a real change the API performs and
+	// audits, rather than a thing the form had to hide. It is still governed by
+	// `isEditable("assignedToId")`, so a viewer who may not change the field sees a
+	// disabled control rather than a choice they cannot make.
 	// Locked fields are rendered but not editable, with the reason spelled out
 	// rather than leaving a dead input that looks like a bug.
 	const lockedMessage = isEditing
@@ -291,37 +294,16 @@ export function TaskFormDialog({
 						</div>
 					</div>
 					<div className="grid gap-4 sm:grid-cols-2">
-						<div className="grid gap-2">
-							<Label htmlFor="task-assignee">Assignee</Label>
-							<select
-								aria-invalid={
-									errors.assignedToId !== undefined || conflict !== null
-								}
-								className="h-9 w-full rounded-lg border bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-60"
-								disabled={!isEditable("assignedToId")}
-								id="task-assignee"
-								{...register("assignedToId")}
-							>
-								{/* The update endpoint has no way to express "clear the
-								    assignee", so an assigned task must keep one to avoid
-								    submitting a no-op update. */}
-								{canClearAssignee ? <option value="">Unassigned</option> : null}
-								{assignees.map((assignee) => (
-									<option key={assignee.id} value={assignee.id}>
-										{`${assignee.name} (${getTaskDepartmentLabel(assignee.department)})`}
-									</option>
-								))}
-							</select>
-							{conflictMessage !== null ? (
-								<p className="text-sm text-destructive" role="alert">
-									{conflictMessage}
-								</p>
-							) : errors.assignedToId ? (
-								<p className="text-sm text-destructive">
-									{errors.assignedToId.message}
-								</p>
-							) : null}
-						</div>
+						<TaskAssigneeSelect
+							errorMessage={conflictMessage ?? null}
+							id="task-assignee"
+							invalid={errors.assignedToId !== undefined || conflict !== null}
+							disabled={!isEditable("assignedToId")}
+							name="assignedToId"
+							options={assignees}
+							register={register("assignedToId")}
+							value={assignedToId}
+						/>
 						<div className="grid gap-2">
 							<Label htmlFor="task-status">Status</Label>
 							<select

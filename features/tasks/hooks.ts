@@ -19,6 +19,7 @@ import {
 	deleteTaskDependency as deleteTaskDependencyRequest,
 	deleteTask as deleteTaskRequest,
 	getTask as getTaskRequest,
+	listMyTasks as listMyTasksRequest,
 	listTaskAuditLogs as listTaskAuditLogsRequest,
 	listTaskDependencies as listTaskDependenciesRequest,
 	listTasks as listTasksRequest,
@@ -36,6 +37,18 @@ export const taskKeys = {
 	lists: () => [...taskKeys.all, "list"] as const,
 	list: (role: UserRole, query: ListQueryParams = {}) =>
 		[...taskKeys.lists(), role, normalizeListQueryParams(query)] as const,
+	/**
+	 * The caller's own work.
+	 *
+	 * A separate prefix from the general list rather than another value on it. It
+	 * is a different question — "what is on my plate" versus "what exists" — and
+	 * invalidating one after an assignment change must not refetch the other: a PM
+	 * reassigning somebody else's task changes their My Tasks but not the global
+	 * list's shape.
+	 */
+	myLists: () => [...taskKeys.all, "my-list"] as const,
+	myList: (role: UserRole, query: ListQueryParams = {}) =>
+		[...taskKeys.myLists(), role, normalizeListQueryParams(query)] as const,
 	details: () => [...taskKeys.all, "detail"] as const,
 	detail: (taskId: string) => [...taskKeys.details(), taskId] as const,
 	dependencies: (taskId: string) =>
@@ -72,8 +85,13 @@ async function invalidateTaskGraph(
 	queryClient: ReturnType<typeof useQueryClient>,
 	taskId: string,
 ): Promise<void> {
-	await queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
 	await Promise.all([
+		queryClient.invalidateQueries({ queryKey: taskKeys.lists() }),
+		// The same write can have moved this task on or off somebody's plate, and an
+		// assignment change is exactly the case where "on my plate" is what the reader
+		// is looking at. Refreshed alongside the global list rather than instead of
+		// it: both are now stale, and neither invalidation covers the other.
+		queryClient.invalidateQueries({ queryKey: taskKeys.myLists() }),
 		queryClient.invalidateQueries({ queryKey: taskKeys.detail(taskId) }),
 		queryClient.invalidateQueries({ queryKey: taskKeys.dependencies(taskId) }),
 		// Every successful task mutation appends to the trail, so a change has to
@@ -104,14 +122,51 @@ export async function invalidateProjectDashboard(
 	});
 }
 
+/**
+ * The flat task API is internal-only, so the query is disabled outright for
+ * clients rather than relying on a 403 to surface as an error state.
+ *
+ * `enabled` exists so one component can hold both the global list and My Tasks
+ * without a conditional hook call: the unused one is switched off rather than
+ * fetched and discarded, which would double the requests on either page.
+ */
+function isTaskListEnabled(
+	role: UserRole | undefined,
+	override?: boolean,
+): boolean {
+	return (override ?? true) && Boolean(role) && !isClientRole(role);
+}
+
 export function useTaskList(
 	role: UserRole | undefined,
 	query: ListQueryParams,
+	options: { enabled?: boolean } = {},
 ) {
 	return useQuery({
 		queryKey: taskKeys.list(role ?? "PM", query),
 		queryFn: async ({ signal }) => listTasksRequest(query, signal),
-		enabled: Boolean(role) && !isClientRole(role),
+		enabled: isTaskListEnabled(role, options.enabled),
+		placeholderData: keepPreviousData,
+	});
+}
+
+/**
+ * The tasks assigned to the caller.
+ *
+ * The assignee is decided by the server from the access token, so this sends no
+ * user id at all — the point of the endpoint is that it cannot be pointed at
+ * somebody else, and a client that had to name itself would be a worse version of
+ * the same query. Disabled for a client guest, like every other internal task read.
+ */
+export function useMyTaskList(
+	role: UserRole | undefined,
+	query: ListQueryParams = {},
+	options: { enabled?: boolean } = {},
+) {
+	return useQuery({
+		queryKey: taskKeys.myList(role ?? "PM", query),
+		queryFn: async ({ signal }) => listMyTasksRequest(query, signal),
+		enabled: isTaskListEnabled(role, options.enabled),
 		placeholderData: keepPreviousData,
 	});
 }

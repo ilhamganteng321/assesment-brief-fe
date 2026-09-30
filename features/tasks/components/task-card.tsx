@@ -23,10 +23,10 @@ import {
 	getTaskStatusVariant,
 } from "../labels";
 import type { Task } from "../types";
+import { AssigneeSummaryLine } from "./task-assignee-select";
 
 type TaskCardProps = {
 	task: Task;
-	assigneeName?: string | null;
 	projectName?: string;
 	/** Why Start is unavailable, or `null` when the task can be started. */
 	startBlockedReason?: string | null;
@@ -36,7 +36,6 @@ type TaskCardProps = {
 
 export function TaskCard({
 	task,
-	assigneeName,
 	projectName,
 	startBlockedReason = null,
 	onEdit,
@@ -122,7 +121,18 @@ export function TaskCard({
 					<div className="flex items-center gap-1.5">
 						<UserCircleIcon aria-hidden="true" />
 						<dt className="sr-only">Assignee</dt>
-						<dd>{assigneeName ?? "Unassigned"}</dd>
+						{/* Read from the task's own resolved assignee rather than from a
+					    member list the caller had to fetch: it is authoritative, it works
+					    on every surface the task appears on, and it degrades honestly when
+					    the account is gone — the id still reads as assigned even though the
+					    name is no longer available to show. */}
+						<dd>
+							{task.assignedTo ? (
+								<AssigneeSummaryLine assignee={task.assignedTo} showRole />
+							) : (
+								"Unassigned"
+							)}
+						</dd>
 					</div>
 					<div className="flex items-center gap-1.5">
 						<BuildingsIcon aria-hidden="true" />

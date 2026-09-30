@@ -26,6 +26,7 @@ import {
 	ProgressBar,
 	StatusDistribution,
 } from "./project-progress";
+import { ProjectWorkload } from "./project-workload";
 
 /** Rows scanned for the two sections that need real task rows. */
 const SECTION_SCAN_ROWS = 100;
@@ -237,6 +238,16 @@ export function ProjectDashboard({
 				/>
 			)}
 
+			{/* Who is carrying the work. Internal-only by construction: the payload
+			    names people, so a client guest's metrics never include this field and
+			    has nothing to render here. */}
+			{metricsFailed || !isInternal ? null : (
+				<ProjectWorkload
+					rows={metrics?.workload ?? []}
+					pending={metricsPending}
+				/>
+			)}
+
 			{isInternal ? (
 				<MyTasksSection
 					pending={tasksPending}
@@ -255,14 +266,22 @@ export function ProjectDashboard({
 				}
 			/>
 
-			<ProjectActivity
-				entries={activityQuery.data?.activity ?? []}
-				pending={activityQuery.isPending}
-				error={activityQuery.isError ? activityQuery.error : undefined}
-				onRetry={
-					activityQuery.isError ? () => void activityQuery.refetch() : undefined
-				}
-			/>
+			{/* The anchor target the project tab strip's "Activity" entry points at.
+			    The feed reads the existing task-scoped audit log — there is no
+			    project-level audit model, and inventing entries for it would
+			    fabricate history the database does not hold. */}
+			<div id="project-activity">
+				<ProjectActivity
+					entries={activityQuery.data?.activity ?? []}
+					pending={activityQuery.isPending}
+					error={activityQuery.isError ? activityQuery.error : undefined}
+					onRetry={
+						activityQuery.isError
+							? () => void activityQuery.refetch()
+							: undefined
+					}
+				/>
+			</div>
 		</div>
 	);
 }

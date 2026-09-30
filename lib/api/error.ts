@@ -9,6 +9,10 @@ import {
 /** Server error code for a lost optimistic-lock race. */
 export const CONCURRENT_MODIFICATION_CODE = "CONCURRENT_MODIFICATION";
 
+/** Server error code for a project lifecycle move that is not permitted. */
+export const INVALID_PROJECT_STATUS_TRANSITION_CODE =
+	"INVALID_PROJECT_STATUS_TRANSITION";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
@@ -95,7 +99,17 @@ export function getApiErrorMessage(error: unknown): string {
 			// so the form is rebuilt from the row that actually won.
 			return (
 				apiError.message ||
-				"This item was changed by someone else. The latest version has been loaded."
+				"This item was been changed by someone else. The latest version has been loaded."
+			);
+		case INVALID_PROJECT_STATUS_TRANSITION_CODE:
+			// A refused lifecycle move is a conflict the caller can act on, and the
+			// server's message already names both ends of it. A stale client offering
+			// a step that is no longer available — someone else completed the project
+			// a moment earlier — reads better with the refetch suggested than with a
+			// bare rejection, so the fallback names the next step.
+			return (
+				apiError.message ||
+				"That change is not available from this project's current status. The latest project has been loaded."
 			);
 		default:
 			break;

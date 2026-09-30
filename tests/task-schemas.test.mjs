@@ -459,10 +459,23 @@ describe("task list filters", () => {
 		expect(params.filters).toEqual({ assignedToId: assigneeId });
 	});
 
-	test("leaves unassigned out of the server query entirely", () => {
+	test("sends unassigned to the server as a real filter", () => {
+		// The API accepts `unassigned` as a value on `assignedToId` and resolves it to
+		// a null predicate before counting, so it belongs in the query. It used to be
+		// dropped here and narrowed in the browser instead, which meant the reported
+		// total counted every task while the list showed a subset of one page.
 		const params = toTaskListQueryParams({
 			...DEFAULT_TASK_LIST_STATE,
 			assignedToId: "unassigned",
+		});
+
+		expect(params.filters).toEqual({ assignedToId: "unassigned" });
+	});
+
+	test("leaves any alone as no assignee filter at all", () => {
+		const params = toTaskListQueryParams({
+			...DEFAULT_TASK_LIST_STATE,
+			assignedToId: "any",
 		});
 
 		expect(params.filters).toEqual({});

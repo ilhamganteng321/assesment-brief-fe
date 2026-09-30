@@ -10,8 +10,9 @@ import { normalizeListQueryParams } from "@/lib/api/query/normalize";
 import type { ListQueryParams } from "@/lib/api/query/types";
 
 import {
-	archiveProject,
+	addProjectMember,
 	createProject,
+	deleteProject,
 	getClientProjects,
 	getClientProjectTask,
 	getClientProjectTasks,
@@ -20,12 +21,18 @@ import {
 	getProjectMetrics,
 	listProjectMembers,
 	listProjects,
+	removeProjectMember,
+	searchProjectMemberCandidates,
 	updateProject,
+	updateProjectStatus,
 } from "./api";
+import { MIN_MEMBER_CANDIDATE_SEARCH } from "./member-search";
+import { canManageProjectMembers } from "./permissions";
 import type {
 	ClientTaskListQuery,
 	CreateProjectPayload,
 	UpdateProjectPayload,
+	UpdateProjectStatusPayload,
 } from "./types";
 
 export const projectKeys = {
@@ -47,6 +54,15 @@ export const projectKeys = {
 	detail: (projectId: string) => [...projectKeys.details(), projectId] as const,
 	members: (projectId: string) =>
 		[...projectKeys.details(), projectId, "members"] as const,
+	/**
+	 * One search of the candidate endpoint.
+	 *
+	 * Keyed on the search text, so typing narrows the cache rather than replacing
+	 * it, and revisiting a term the user already typed is a cache hit instead of
+	 * another request.
+	 */
+	memberCandidates: (projectId: string, search: string) =>
+		[...projectKeys.details(), projectId, "member-candidates", search] as const,
 	metrics: (projectId: string) =>
 		[...projectKeys.details(), projectId, "metrics"] as const,
 	activity: (projectId: string) =>
@@ -112,6 +128,111 @@ export function useProjectMembers(
 		queryFn: async ({ signal }) =>
 			(await listProjectMembers(projectId, signal)).members,
 		enabled: Boolean(role) && !isClientRole(role) && Boolean(projectId),
+	});
+}
+
+/**
+ * Searches for people who could be added to a project.
+ *
+ * The query is disabled outright for a role that could not act on the answer,
+ * rather than being attempted and refused. The server would answer 403 either
+ * way, but not asking means a project manager's dialog cannot put an internal
+ * engineer's browser into an error state, and it keeps the organisation's user
+ * list out of a session that has no business having it.
+ *
+ * An empty or too-short search never reaches the network: the endpoint would
+ * answer with an empty page, and asking on every keystroke of a cleared field
+ * would be pure noise.
+ */
+export function useProjectMemberCandidates(
+	role: UserRole | undefined,
+	projectId: string,
+	search: string,
+) {
+	const trimmed = search.trim();
+	const isSearchable = trimmed.length >= MIN_MEMBER_CANDIDATE_SEARCH;
+
+	return useQuery({
+		queryKey: projectKeys.memberCandidates(projectId, trimmed),
+		queryFn: async ({ signal }) =>
+			searchProjectMemberCandidates(projectId, { search: trimmed }, signal),
+		enabled:
+			canManageProjectMembers({ role }) && isSearchable && projectId.length > 0,
+		// Results for a term the user has already moved on from are not worth
+		// keeping: the next keystroke supersedes them.
+		gcTime: 0,
+	});
+}
+
+/**
+ * Adds a member.
+ *
+ * No optimistic update, deliberately. Membership is the grant that opens a
+ * project to somebody, so the interface should show what the server actually
+ * did rather than a guess that might have to be rolled back — particularly since
+ * a duplicate or an archived project is refused, and both are far more useful
+ * reported after the fact than pre-empted in the browser.
+ *
+ * Invalidating the member list is the point: the server is the source of truth
+ * for who is on the project, so the list is refetched rather than patched. The
+ * candidate searches for this project are dropped too, because the person just
+ * added is now a member and their row would otherwise linger as "already a
+ * member" in a list the user has not navigated away from.
+ */
+export function useAddProjectMember(role: UserRole | undefined) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			projectId,
+			userId,
+		}: {
+			projectId: string;
+			userId: string;
+		}) => {
+			assertProjectManager(role);
+			return addProjectMember(projectId, { userId });
+		},
+		onSuccess: async (_member, { projectId }) => {
+			queryClient.removeQueries({
+				queryKey: [...projectKeys.details(), projectId, "member-candidates"],
+			});
+			await queryClient.invalidateQueries({
+				queryKey: projectKeys.members(projectId),
+			});
+		},
+	});
+}
+
+/**
+ * Removes a member.
+ *
+ * Invalidates the same two things as adding, for the same reason: the server
+ * decides the outcome, and the list is refetched to match. Scoped to this one
+ * project rather than the whole cache.
+ */
+export function useRemoveProjectMember(role: UserRole | undefined) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			projectId,
+			userId,
+		}: {
+			projectId: string;
+			userId: string;
+		}) => {
+			assertProjectManager(role);
+			return removeProjectMember(projectId, userId);
+		},
+		onSuccess: async (_data, { projectId }) => {
+			queryClient.removeQueries({
+				queryKey: [...projectKeys.details(), projectId, "member-candidates"],
+			});
+			await queryClient.invalidateQueries({
+				queryKey: projectKeys.members(projectId),
+			});
+		},
 	});
 }
 
@@ -234,6 +355,8 @@ export function useUpdateProject(role: UserRole | undefined) {
 		},
 		onSuccess: async (_data, { projectId }) => {
 			await Promise.all([
+				// A rename is visible in the list as well as on the page it was made
+				// from, and in a client's own read-only list of their projects.
 				queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
 				queryClient.invalidateQueries({
 					queryKey: projectKeys.detail(projectId),
@@ -243,21 +366,63 @@ export function useUpdateProject(role: UserRole | undefined) {
 	});
 }
 
-export function useArchiveProject(role: UserRole | undefined) {
+/**
+ * Moves a project along its lifecycle.
+ *
+ * One move touches three things: the project row, the position it holds in the
+ * list, and the set of controls the page offers next — completing a project
+ * changes the list's status filter results, and archiving makes every other
+ * control disappear. The invalidation is scoped to this one project's prefix and
+ * to the list, so completing a project in one place does not refetch every other
+ * dashboard.
+ */
+export function useUpdateProjectStatus(role: UserRole | undefined) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			projectId,
+			payload,
+		}: {
+			projectId: string;
+			payload: UpdateProjectStatusPayload;
+		}) => {
+			assertProjectManager(role);
+			return updateProjectStatus(projectId, payload);
+		},
+		onSuccess: async (_data, { projectId }) => {
+			await Promise.all([
+				// The status column of every list, including one currently filtered
+				// by the status the project just left.
+				queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+				// The project row itself, plus the metrics and activity cached under
+				// its prefix, so the header and the dashboard agree with the server.
+				queryClient.invalidateQueries({
+					queryKey: projectKeys.dashboard(projectId),
+				}),
+			]);
+		},
+	});
+}
+
+/**
+ * Soft-deletes a project.
+ *
+ * The row is retained, so there is nothing to refetch for this project: the
+ * detail query is dropped rather than invalidated, because a deleted project is
+ * not retrievable and an invalidated query would only refetch to be told 404.
+ */
+export function useDeleteProject(role: UserRole | undefined) {
 	const queryClient = useQueryClient();
 
 	return useMutation({
 		mutationFn: (projectId: string) => {
 			assertProjectManager(role);
-			return archiveProject(projectId);
+			return deleteProject(projectId);
 		},
 		onSuccess: async (_data, projectId) => {
-			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
-				queryClient.invalidateQueries({
-					queryKey: projectKeys.detail(projectId),
-				}),
-			]);
+			queryClient.removeQueries({ queryKey: projectKeys.dashboard(projectId) });
+			await queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
 		},
 	});
 }

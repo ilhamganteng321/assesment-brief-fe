@@ -33,6 +33,18 @@ export const DEFAULT_TASK_SEARCH_FIELD = "title";
 export const TASK_VIEWS = ["list", "board"] as const;
 export type TaskView = (typeof TASK_VIEWS)[number];
 
+/**
+ * Which question a task list is answering.
+ *
+ * A property of the *list*, not a filter within it. "Everything I can reach" and
+ * "what is on my plate" are answered by different endpoints, because the second is
+ * a statement about the signed-in account rather than about the rows — and a
+ * client that had to name itself to ask would be asking the server something it
+ * already knows.
+ */
+export const TASK_LIST_SCOPES = ["all", "mine"] as const;
+export type TaskListScope = (typeof TASK_LIST_SCOPES)[number];
+
 export type TaskListState = {
 	search: string;
 	status: TaskStatus | "all";
@@ -281,12 +293,13 @@ export function toTaskListQueryParams(state: TaskListState): ListQueryParams {
 		filters.department = state.department;
 	}
 
-	// "unassigned" cannot be sent as a filter value because the API has no such
-	// keyword, so it is applied here as a post-query narrowing instead. That is
-	// only sound because it is a strict subset: the server has already paged,
-	// ordered, and authorised the result, and the filter can only remove rows the
-	// caller is allowed to see. A specific assignee is a real server-side filter.
-	if (state.assignedToId !== "any" && state.assignedToId !== "unassigned") {
+	// A real server-side filter, including `"unassigned"`, which the API accepts as a
+	// value on this same key. It used to be narrowed in the browser instead, because
+	// the API had no way to express it — which meant paging and the reported total
+	// counted *all* the project's tasks while the list showed a subset of one page,
+	// so a project with unassigned work on page 3 looked empty. The server answers
+	// `IS NULL` for the keyword, so the count and the rows now agree.
+	if (state.assignedToId !== "any") {
 		filters.assignedToId = state.assignedToId;
 	}
 

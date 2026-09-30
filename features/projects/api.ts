@@ -4,6 +4,7 @@ import type { ListQueryParams } from "@/lib/api/query/types";
 import type { ApiSuccessResponse } from "@/lib/api/types";
 
 import type {
+	AddProjectMemberPayload,
 	ClientProjectList,
 	ClientTask,
 	ClientTaskList,
@@ -12,10 +13,14 @@ import type {
 	ProjectActivityList,
 	ProjectDetail,
 	ProjectList,
+	ProjectMember,
+	ProjectMemberCandidateQuery,
+	ProjectMemberCandidates,
 	ProjectMemberList,
 	ProjectMetrics,
 	ProjectMetricsDetail,
 	UpdateProjectPayload,
+	UpdateProjectStatusPayload,
 } from "./types";
 
 export async function listProjects(
@@ -64,7 +69,35 @@ export async function updateProject(
 	return response.data.data;
 }
 
-export async function archiveProject(projectId: string): Promise<void> {
+/**
+ * Moves a project one step along its lifecycle.
+ *
+ * Its own endpoint rather than a field on the general update, so a lifecycle move
+ * is a single named intent that cannot carry a rename along with it. The server
+ * decides whether the move is legal and answers 409
+ * INVALID_PROJECT_STATUS_TRANSITION if it is not; nothing here pre-checks it,
+ * because the server's copy of the project is the current one.
+ */
+export async function updateProjectStatus(
+	projectId: string,
+	payload: UpdateProjectStatusPayload,
+): Promise<ProjectDetail> {
+	const response = await apiClient.patch<ApiSuccessResponse<ProjectDetail>>(
+		`/projects/${projectId}/status`,
+		payload,
+	);
+	return response.data.data;
+}
+
+/**
+ * Soft-deletes a project.
+ *
+ * Named for what the API does rather than for how it reads in the interface: the
+ * row is retained with a `deletedAt` stamp and disappears from every list, and
+ * that is a different thing from the ARCHIVED lifecycle state, which keeps the
+ * project readable and merely read-only.
+ */
+export async function deleteProject(projectId: string): Promise<void> {
 	await apiClient.delete(`/projects/${projectId}`);
 }
 
@@ -76,6 +109,50 @@ export async function listProjectMembers(
 		`/projects/${projectId}/members`,
 		{ signal },
 	);
+	return response.data.data;
+}
+
+export async function addProjectMember(
+	projectId: string,
+	payload: AddProjectMemberPayload,
+): Promise<ProjectMember> {
+	const response = await apiClient.post<
+		ApiSuccessResponse<{ member: ProjectMember }>
+	>(`/projects/${projectId}/members`, payload);
+	return response.data.data.member;
+}
+
+export async function removeProjectMember(
+	projectId: string,
+	userId: string,
+): Promise<void> {
+	await apiClient.delete(`/projects/${projectId}/members/${userId}`);
+}
+
+/**
+ * Searches the organisation for people who could be added to this project.
+ *
+ * Server-side and paged on purpose. The candidate set is every account, so
+ * filtering it in the browser would mean shipping the whole user table to anyone
+ * who opened the dialog — which is both slow and a far larger disclosure than the
+ * feature needs. Nothing here is pre-checked: the server decides who is
+ * eligible, and a stale answer from this call is caught by the write.
+ */
+export async function searchProjectMemberCandidates(
+	projectId: string,
+	query: ProjectMemberCandidateQuery,
+	signal?: AbortSignal,
+): Promise<ProjectMemberCandidates> {
+	const response = await apiClient.get<
+		ApiSuccessResponse<ProjectMemberCandidates>
+	>(`/projects/${projectId}/members/candidates`, {
+		params: {
+			search: query.search,
+			page: query.page ?? 1,
+			rows: query.rows ?? 10,
+		},
+		signal,
+	});
 	return response.data.data;
 }
 

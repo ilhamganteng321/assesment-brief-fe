@@ -1,13 +1,14 @@
 import { login, logout } from "../features/auth/api";
 import {
-	archiveProject,
 	createProject,
+	deleteProject,
 	getClientProjects,
 	getClientProjectTasks,
 	getProject,
 	listProjectMembers,
 	listProjects,
 	updateProject,
+	updateProjectStatus,
 } from "../features/projects/api";
 import { normalizeApiError } from "../lib/api/error";
 import { buildQueryParams } from "../lib/api/query/serialize";
@@ -123,12 +124,27 @@ function assertProjectList(payload, label) {
 			!("deletedAt" in project) && !("members" in project),
 			`${label} project ${project.id} leaked internal fields`,
 		);
+		// The list carries the server's own progress figure, so a bar drawn here
+		// and the number on the project it links to cannot disagree.
+		assert(
+			typeof project.progress?.percentage === "number",
+			`${label} project ${project.id} progress percentage`,
+		);
 	}
 
 	return projects;
 }
 
-async function verifyInternalProjectAccess(email, password) {
+/**
+ * The read surface every internal role shares, plus the write surface that
+ * separates them.
+ *
+ * A project manager may edit and may move a project through its lifecycle; an
+ * internal engineer may do neither, despite being able to open the project. That
+ * split is the point of the check, so the same read path is walked for both and
+ * the expected write result is asserted per role.
+ */
+async function verifyInternalProjectAccess(email, password, { canWrite }) {
 	await withSession(email, password, async () => {
 		const projects = assertProjectList(await listProjects(), email);
 
@@ -148,7 +164,52 @@ async function verifyInternalProjectAccess(email, password) {
 		assert(Array.isArray(members), `${email} member list was not an array`);
 
 		await expectStatus(getClientProjects(), 403, `${email} client dashboard`);
+
+		// Read access is not write access. An internal engineer can open a project
+		// they are a member of and still not change anything about it, which is
+		// exactly the distinction the role matrix is meant to express. A project
+		// manager gets the opposite answer for all three.
+		//
+		// The status probe re-asserts the status the project already holds, which
+		// the server permits as a no-op, so the only thing being tested is the role.
+		await expectAllowed(canWrite, () =>
+			updateProject(project.id, { clientName: "Verify Write Probe" }),
+		);
+		await expectAllowed(canWrite, () =>
+			updateProjectStatus(project.id, { status: project.status }),
+		);
+
+		// Delete is only exercised as a refusal. It is destructive, and the shared
+		// project's survival is needed by later checks; the successful delete is
+		// covered against a project the fixture owns outright below.
+		if (!canWrite) {
+			await expectStatus(
+				deleteProject(project.id),
+				403,
+				`${email} deleting a project`,
+			);
+		}
 	});
+}
+
+/**
+ * Asserts a request either succeeded or was refused with 403.
+ *
+ * Unlike `expectStatus` this does not pin one outcome, because the caller is
+ * checking that the *role* decides the answer and the role is the parameter.
+ */
+async function expectAllowed(allowed, run) {
+	try {
+		await run();
+		assert(allowed, "the request was refused but the role permits it");
+	} catch (error) {
+		const status = normalizeApiError(error).status;
+		assert(
+			!allowed && status === 403,
+			`the request was ${allowed ? "allowed" : `refused with ${status}`}` +
+				(allowed ? "" : ", expected a 403"),
+		);
+	}
 }
 
 async function verifyProjectQueryContract() {
@@ -201,37 +262,79 @@ async function verifyProjectQueryContract() {
 				"a non-matching search should return no projects",
 			);
 
+			// Metadata only: the lifecycle has its own endpoint, so a rename cannot
+			// double as a status change.
 			const { project: updated } = await updateProject(created.id, {
-				status: "ARCHIVED",
+				clientName: "Verify Client Renamed",
 			});
 
 			assert(
-				updated.status === "ARCHIVED",
-				`updated project status was ${updated.status}`,
+				updated.clientName === "Verify Client Renamed",
+				`updated project client was ${updated.clientName}`,
 			);
 			assert(
 				updated.name === created.name,
 				"the update replaced omitted fields",
 			);
+			assert(
+				updated.status === created.status,
+				"a metadata edit changed the project status",
+			);
 
-			await archiveProject(created.id);
+			// The lifecycle only moves forward one step at a time, so the project is
+			// walked rather than jumped. A skip is a 409 naming both ends.
 			await expectStatus(
-				getProject(created.id),
-				404,
-				"archived project detail",
+				updateProjectStatus(created.id, { status: "ARCHIVED" }),
+				409,
+				"PLANNING to ARCHIVED",
+			);
+
+			for (const status of ["ACTIVE", "COMPLETED", "ARCHIVED"]) {
+				const moved = await updateProjectStatus(created.id, { status });
+				assert(
+					moved.project.status === status,
+					`moving to ${status} produced ${moved.project.status}`,
+				);
+			}
+
+			// ARCHIVED is terminal: there is no reopen, and an archived project is
+			// read-only while remaining fully readable.
+			await expectStatus(
+				updateProjectStatus(created.id, { status: "ACTIVE" }),
+				409,
+				"ARCHIVED to ACTIVE",
+			);
+			await expectStatus(
+				updateProject(created.id, { name: "Renamed after archiving" }),
+				409,
+				"editing an archived project",
+			);
+
+			const archivedDetail = await getProject(created.id);
+
+			assert(
+				archivedDetail.project.status === "ARCHIVED",
+				"an archived project stopped being readable",
+			);
+			assert(
+				archivedDetail.project.name === created.name,
+				"an archived project lost its metadata",
 			);
 
 			const afterArchive = await listProjects({ rows: 100 });
 
 			assert(
 				!afterArchive.projects.some((project) => project.id === created.id),
-				"an archived project is still listed",
+				"a soft deleted project is still listed",
 			);
+
+			await deleteProject(created.id);
+			await expectStatus(getProject(created.id), 404, "deleted project detail");
 		} finally {
 			try {
-				await archiveProject(created.id);
+				await deleteProject(created.id);
 			} catch {
-				// Already archived above; cleanup is best effort.
+				// Already deleted above; cleanup is best effort.
 			}
 		}
 	});
@@ -381,8 +484,12 @@ assert(password, "AUTH_SMOKE_PASSWORD is required");
 
 await verifyQuerySerialization();
 await verifyUnauthenticatedAccess();
-await verifyInternalProjectAccess("pm@aurora.demo", password);
-await verifyInternalProjectAccess("uiux@aurora.demo", password);
+await verifyInternalProjectAccess("pm@aurora.demo", password, {
+	canWrite: true,
+});
+await verifyInternalProjectAccess("uiux@aurora.demo", password, {
+	canWrite: false,
+});
 await verifyProjectQueryContract();
 await verifyClientProjectAccess("client@aurora.demo", password);
 

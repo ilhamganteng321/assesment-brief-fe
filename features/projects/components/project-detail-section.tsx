@@ -1,16 +1,14 @@
 "use client";
 
 import {
-	ArchiveIcon,
 	BuildingsIcon,
-	CalendarBlankIcon,
 	PencilSimpleIcon,
+	TrashIcon,
 } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { PageBreadcrumbs, PageHeader } from "@/components/layout/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -21,64 +19,61 @@ import type {
 	TaskAssigneeSummary,
 	TaskDepartment,
 } from "@/features/tasks/types";
+import { normalizeApiError } from "@/lib/api/error";
 import { formatDate } from "@/lib/format";
+
 import {
 	useClientProject,
 	useProjectDetail,
 	useProjectMembers,
 } from "../hooks";
-import { getProjectStatusLabel, getProjectStatusVariant } from "../labels";
+import { getProjectStatusDescription } from "../labels";
+import {
+	canDeleteProject,
+	canEditProjectNow,
+	getAvailableLifecycleActions,
+} from "../permissions";
+import type { ProjectStatus } from "../types";
 import { ClientProjectTasks } from "./client-project-tasks";
-import { ProjectArchiveDialog } from "./project-archive-dialog";
 import { ProjectDashboard } from "./project-dashboard";
+import { ProjectDeleteDialog } from "./project-delete-dialog";
 import { ProjectDetailSkeleton } from "./project-detail-skeleton";
 import { ProjectFormDialog } from "./project-form-dialog";
-import { ProjectMembersCard } from "./project-members-card";
+import { ProjectLifecycleDialog } from "./project-lifecycle-dialog";
+import { ProjectMembersSection } from "./project-members-section";
+import { ProjectOverview } from "./project-overview";
+import { ProjectStatusBadge } from "./project-status-badge";
+import { ProjectTabs } from "./project-tabs";
 
-function ProgressBar({ percentage }: { percentage: number }) {
-	const value = Number.isFinite(percentage)
-		? Math.min(100, Math.max(0, Math.round(percentage)))
-		: 0;
-
-	return (
-		<div className="flex flex-col gap-1.5">
-			<div className="flex items-center justify-between text-xs">
-				<span className="text-muted-foreground">Overall progress</span>
-				<span className="font-medium">{value}%</span>
-			</div>
-			<div
-				aria-label={`${value}% complete`}
-				aria-valuemax={100}
-				aria-valuemin={0}
-				aria-valuenow={value}
-				className="h-2 w-full overflow-hidden rounded-full bg-muted"
-				role="progressbar"
-			>
-				<div
-					className="h-full rounded-full bg-primary transition-[width]"
-					style={{ width: `${value}%` }}
-				/>
-			</div>
-		</div>
-	);
-}
-
-type ProjectDetailSectionProps = {
-	projectId: string;
-};
-
-export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
+/**
+ * One project: its overview, its tasks, its members and its history.
+ *
+ * The header states where the project is in its lifecycle and offers the single
+ * step it can take from there. Every control is permission-gated by the
+ * `permissions` module, which mirrors the server's policy: an internal user and
+ * a client guest see no lifecycle or edit controls at all, because the API would
+ * refuse them. That is a usability measure, not a security one — the backend
+ * re-checks the role, the project visibility rule and the lifecycle itself on
+ * every request.
+ *
+ * The client guest's view is a separate branch all the way down rather than the
+ * same page with fields hidden: it reads the scoped `/client` payloads, which
+ * never carry an assignee, a department, a version or an audit trail.
+ */
+export function ProjectDetailSection({ projectId }: { projectId: string }) {
 	const { user } = useAuth();
 	const role = user?.role;
 	const isClient = role === "CLIENT";
 	const router = useRouter();
 	const [editOpen, setEditOpen] = useState(false);
-	const [archiveOpen, setArchiveOpen] = useState(false);
+	const [deleteOpen, setDeleteOpen] = useState(false);
+	const [lifecycleTarget, setLifecycleTarget] = useState<ProjectStatus | null>(
+		null,
+	);
 	const internalProject = useProjectDetail(role, projectId);
 	const membersQuery = useProjectMembers(role, projectId);
 	const clientProject = useClientProject(role, projectId);
 	const query = isClient ? clientProject : internalProject;
-	const canManage = role === "PM";
 
 	const breadcrumbs = [
 		{ label: "Projects", href: "/projects" },
@@ -90,11 +85,25 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 	}
 
 	if (query.isError) {
+		const code = normalizeApiError(query.error).code;
+
 		return (
 			<div className="flex flex-col gap-4">
 				<PageBreadcrumbs items={breadcrumbs} />
 				<QueryErrorState
+					description={
+						code === "PROJECT_ACCESS_DENIED"
+							? "This project is not available to your account."
+							: code === "PROJECT_NOT_FOUND"
+								? "This project does not exist, or it has been deleted."
+								: undefined
+					}
 					error={query.error}
+					title={
+						code === "PROJECT_ACCESS_DENIED"
+							? "You do not have access to this project"
+							: "Unable to load this project"
+					}
 					onRetry={() => void query.refetch()}
 				/>
 			</div>
@@ -102,9 +111,9 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 	}
 
 	if (isClient) {
-		const project = clientProject.data;
+		const clientDetail = clientProject.data;
 
-		if (!project) {
+		if (!clientDetail) {
 			return (
 				<div className="flex flex-col gap-4">
 					<PageBreadcrumbs items={breadcrumbs} />
@@ -118,44 +127,11 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 
 		return (
 			<div className="flex flex-col gap-6">
-				<PageHeader title={project.name}>
+				<PageHeader title={clientDetail.name}>
 					<PageBreadcrumbs items={breadcrumbs} />
 				</PageHeader>
-				<Card>
-					<CardHeader>
-						<CardTitle>Progress</CardTitle>
-					</CardHeader>
-					<CardContent className="flex flex-col gap-4">
-						<ProgressBar percentage={project.progress.percentage} />
-						<dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-							<div className="rounded-lg border p-3">
-								<dt className="text-xs text-muted-foreground">Total</dt>
-								<dd className="font-heading text-lg font-semibold">
-									{project.tasks.total}
-								</dd>
-							</div>
-							<div className="rounded-lg border p-3">
-								<dt className="text-xs text-muted-foreground">Completed</dt>
-								<dd className="font-heading text-lg font-semibold">
-									{project.tasks.completed}
-								</dd>
-							</div>
-							<div className="rounded-lg border p-3">
-								<dt className="text-xs text-muted-foreground">In progress</dt>
-								<dd className="font-heading text-lg font-semibold">
-									{project.tasks.inProgress}
-								</dd>
-							</div>
-							<div className="rounded-lg border p-3">
-								<dt className="text-xs text-muted-foreground">Blocked</dt>
-								<dd className="font-heading text-lg font-semibold">
-									{project.tasks.blocked}
-								</dd>
-							</div>
-						</dl>
-					</CardContent>
-				</Card>
-				<ClientProjectTasks projectId={project.id} />
+				<ProjectOverview metrics={clientDetail} />
+				<ClientProjectTasks projectId={clientDetail.id} />
 			</div>
 		);
 	}
@@ -175,7 +151,9 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 	}
 
 	// Only internal members can own a task. A `CLIENT` department identifies a
-	// client account, which the backend rejects as an assignee.
+	// client account, which the backend rejects as an assignee. The member list
+	// already carries the role, and it is passed through because the assignee
+	// control shows what the person will be able to do with the task.
 	const taskAssignees: TaskAssigneeSummary[] = (membersQuery.data ?? [])
 		.filter(
 			(
@@ -188,31 +166,54 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 			id: member.user.id,
 			name: member.user.name,
 			email: member.user.email,
+			role: member.user.role,
 			department: member.user.department,
 		}));
+
+	const canEdit = canEditProjectNow({ role }, project);
+	const canDelete = canDeleteProject({ role });
+	const lifecycleActions = getAvailableLifecycleActions({ role }, project);
+	const hasPrimaryActions = canEdit || canDelete || lifecycleActions.length > 0;
 
 	return (
 		<div className="flex flex-col gap-6">
 			<PageHeader
 				actions={
-					canManage ? (
+					hasPrimaryActions ? (
 						<>
-							<Button
-								type="button"
-								variant="outline"
-								onClick={() => setEditOpen(true)}
-							>
-								<PencilSimpleIcon aria-hidden="true" />
-								Edit
-							</Button>
-							<Button
-								type="button"
-								variant="destructive"
-								onClick={() => setArchiveOpen(true)}
-							>
-								<ArchiveIcon aria-hidden="true" />
-								Archive
-							</Button>
+							{canEdit ? (
+								<Button
+									type="button"
+									variant="outline"
+									onClick={() => setEditOpen(true)}
+								>
+									<PencilSimpleIcon aria-hidden="true" />
+									Edit Project
+								</Button>
+							) : null}
+							{lifecycleActions.map((action) => (
+								<Button
+									key={action.targetStatus}
+									type="button"
+									variant={
+										action.targetStatus === "ARCHIVED" ? "outline" : "default"
+									}
+									onClick={() => setLifecycleTarget(action.targetStatus)}
+								>
+									{action.label}
+								</Button>
+							))}
+							{canDelete ? (
+								<Button
+									aria-label={`Delete ${project.name}`}
+									type="button"
+									variant="destructive"
+									onClick={() => setDeleteOpen(true)}
+								>
+									<TrashIcon aria-hidden="true" />
+									Delete
+								</Button>
+							) : null}
 						</>
 					) : undefined
 				}
@@ -221,15 +222,11 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 			>
 				<PageBreadcrumbs items={breadcrumbs} />
 			</PageHeader>
+
 			<Card>
-				<CardHeader>
-					<CardTitle>Details</CardTitle>
-				</CardHeader>
-				<CardContent className="flex flex-col gap-4">
-					<div className="flex flex-wrap items-center gap-2">
-						<Badge variant={getProjectStatusVariant(project.status)}>
-							{getProjectStatusLabel(project.status)}
-						</Badge>
+				<CardContent className="flex flex-col gap-3">
+					<div className="flex flex-wrap items-center gap-3">
+						<ProjectStatusBadge status={project.status} />
 						{project.clientName ? (
 							<span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
 								<BuildingsIcon aria-hidden="true" />
@@ -237,30 +234,14 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 							</span>
 						) : null}
 					</div>
-					<dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-						<div className="flex items-center gap-2">
-							<CalendarBlankIcon
-								aria-hidden="true"
-								className="text-muted-foreground"
-							/>
-							<dt className="text-muted-foreground">Created</dt>
-							<dd>{formatDate(project.createdAt)}</dd>
-						</div>
-						<div className="flex items-center gap-2">
-							<CalendarBlankIcon
-								aria-hidden="true"
-								className="text-muted-foreground"
-							/>
-							<dt className="text-muted-foreground">Last updated</dt>
-							<dd>{formatDate(project.updatedAt)}</dd>
-						</div>
-					</dl>
+					<p className="text-sm text-muted-foreground">
+						{getProjectStatusDescription(project.status)}
+					</p>
 				</CardContent>
 			</Card>
-			<ProjectMembersCard
-				isLoading={membersQuery.isPending}
-				members={membersQuery.data}
-			/>
+
+			<ProjectTabs activeSection="overview" projectId={project.id} />
+
 			<ProjectDashboard
 				currentUserId={user?.id}
 				projectId={project.id}
@@ -270,6 +251,7 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 				// one create path is easier to keep permission-correct than two.
 				onCreateTaskHref="#project-tasks"
 			/>
+
 			<Card id="project-tasks">
 				<CardHeader>
 					<CardTitle>Tasks</CardTitle>
@@ -282,23 +264,66 @@ export function ProjectDetailSection({ projectId }: ProjectDetailSectionProps) {
 					/>
 				</CardContent>
 			</Card>
-			{canManage ? (
-				<>
-					<ProjectFormDialog
-						onOpenChange={setEditOpen}
-						open={editOpen}
-						project={project}
-						role={role}
-					/>
-					<ProjectArchiveDialog
-						onArchived={() => router.push("/projects")}
-						onOpenChange={setArchiveOpen}
-						open={archiveOpen}
-						project={project}
-						role={role}
-					/>
-				</>
+
+			<ProjectMembersSection id="project-members" project={project} />
+
+			<Card>
+				<CardHeader>
+					<CardTitle>Record</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+						<div className="flex items-center gap-2">
+							<dt className="text-muted-foreground">Created</dt>
+							<dd>
+								<time dateTime={project.createdAt}>
+									{formatDate(project.createdAt)}
+								</time>
+							</dd>
+						</div>
+						<div className="flex items-center gap-2">
+							<dt className="text-muted-foreground">Last updated</dt>
+							<dd>
+								<time dateTime={project.updatedAt}>
+									{formatDate(project.updatedAt)}
+								</time>
+							</dd>
+						</div>
+					</dl>
+				</CardContent>
+			</Card>
+
+			{canEdit ? (
+				<ProjectFormDialog
+					onOpenChange={setEditOpen}
+					open={editOpen}
+					project={project}
+					role={role}
+				/>
 			) : null}
+
+			{canDelete ? (
+				<ProjectDeleteDialog
+					onDeleted={() => router.push("/projects")}
+					onOpenChange={setDeleteOpen}
+					open={deleteOpen}
+					project={project}
+					role={role}
+				/>
+			) : null}
+
+			{lifecycleTarget === null ? null : (
+				<ProjectLifecycleDialog
+					onOpenChange={(nextOpen) => {
+						if (!nextOpen) {
+							setLifecycleTarget(null);
+						}
+					}}
+					open
+					project={project}
+					targetStatus={lifecycleTarget}
+				/>
+			)}
 		</div>
 	);
 }

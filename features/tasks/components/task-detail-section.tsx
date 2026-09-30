@@ -62,6 +62,7 @@ export function TaskDetailSection({ taskId }: TaskDetailSectionProps) {
 				id: member.user.id,
 				name: member.user.name,
 				email: member.user.email,
+				role: member.user.role,
 				department:
 					member.user.department === "CLIENT"
 						? "PRODUCT"

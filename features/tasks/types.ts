@@ -1,3 +1,11 @@
+import type { UserRole } from "@/features/auth/types";
+
+/**
+ * Re-exported rather than restated, so there is exactly one definition of a user's
+ * role in the codebase — the same reasoning as `features/projects/types.ts`.
+ */
+export type { UserRole };
+
 export const TASK_STATUSES = [
 	"TODO",
 	"BLOCKED",
@@ -56,6 +64,14 @@ export type Task = {
 	id: string;
 	projectId: string;
 	assignedToId: string | null;
+	/**
+	 * The assignee's display fields, resolved server-side, or null.
+	 *
+	 * A display copy of `assignedToId` rather than a second source of truth: the id
+	 * stays authoritative and this is only there so a list can render a name without
+	 * a request per row.
+	 */
+	assignedTo: TaskAssignee | null;
 	title: string;
 	description: string | null;
 	status: TaskStatus;
@@ -79,8 +95,24 @@ export type TaskAssigneeSummary = {
 	id: string;
 	name: string;
 	email: string;
+	/**
+	 * The person's global role. Shown next to their name in the assignee control
+	 * because it is what they will be able to do with the task once they have it,
+	 * and it is the same field the member list already carries.
+	 */
+	role: UserRole;
 	department: TaskDepartment;
 };
+
+/**
+ * Who is on a task, as the server resolved it.
+ *
+ * Present on the list as well as the detail so a table row can name the person
+ * without the browser issuing a request per task. `null` on an unassigned task, and
+ * there is no way for it to be anything else — the server builds it field by field
+ * and never includes anything beyond these five.
+ */
+export type TaskAssignee = TaskAssigneeSummary;
 
 export type TaskDetail = Task & {
 	project: TaskProjectSummary;
@@ -113,7 +145,14 @@ export type CreateTaskPayload = {
 export type UpdateTaskPayload = {
 	title?: string;
 	description?: string;
-	assignedToId?: string;
+	/**
+	 * A uuid reassigns the task, `null` clears it, and omitting the field leaves it
+	 * alone. The three states are distinct on the wire, which is why `null` is in
+	 * the type rather than being collapsed into `undefined`: `undefined` means "do
+	 * not touch", and a payload cannot express "take it off" without a second
+	 * spelling.
+	 */
+	assignedToId?: string | null;
 	status?: TaskStatus;
 	priority?: TaskPriority;
 	department?: TaskDepartment;

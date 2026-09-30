@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/provider";
 import { DEFAULT_PAGE, DEFAULT_ROWS } from "@/lib/api/query/types";
 
 import { useClientProjectList, useProjectList } from "../hooks";
+import { getNextProjectStatuses } from "../lifecycle";
 import {
 	DEFAULT_PROJECT_ORDER_KEY,
 	DEFAULT_PROJECT_ORDER_RULE,
@@ -21,12 +22,13 @@ import {
 	withPage,
 	withPageReset,
 } from "../list-state";
-import type { Project } from "../types";
+import type { Project, ProjectStatus } from "../types";
 import { ClientProjectCard } from "./client-project-card";
-import { ProjectArchiveDialog } from "./project-archive-dialog";
-import { ProjectCard } from "./project-card";
+import { buildProjectCardActions, ProjectCard } from "./project-card";
+import { ProjectDeleteDialog } from "./project-delete-dialog";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { ProjectGridSkeleton } from "./project-grid-skeleton";
+import { ProjectLifecycleDialog } from "./project-lifecycle-dialog";
 import {
 	PROJECT_ROWS_OPTIONS,
 	ProjectListToolbar,
@@ -48,7 +50,11 @@ export function ProjectListSection() {
 	);
 	const [formOpen, setFormOpen] = useState(false);
 	const [editingProject, setEditingProject] = useState<Project | undefined>();
-	const [archiveTarget, setArchiveTarget] = useState<Project | null>(null);
+	const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+	const [lifecycleTarget, setLifecycleTarget] = useState<{
+		project: Project;
+		status: ProjectStatus;
+	} | null>(null);
 	const clientQuery = useClientProjectList(role);
 	const queryParams = useMemo(() => toListQueryParams(state), [state]);
 	const internalQuery = useProjectList(role, queryParams);
@@ -201,17 +207,32 @@ export function ProjectListSection() {
 							internalQuery.isFetching ? "opacity-60" : "opacity-100"
 						}`}
 					>
-						{projects.map((project) => (
-							<li key={project.id}>
-								<ProjectCard
-									canArchive={canManage}
-									canEdit={canManage}
-									project={project}
-									onArchive={() => setArchiveTarget(project)}
-									onEdit={() => openEditDialog(project)}
-								/>
-							</li>
-						))}
+						{projects.map((project) => {
+							// The one lifecycle step this project can take, or null once
+							// it has reached the end of its lifecycle. The server decides
+							// for itself whether the move is allowed; this only stops the
+							// list offering a control that would be refused.
+							const nextStatus =
+								getNextProjectStatuses(project.status)[0] ?? null;
+
+							return (
+								<li key={project.id}>
+									<ProjectCard
+										actions={buildProjectCardActions({
+											canEdit: canManage,
+											canDelete: canManage,
+											nextStatus,
+											onEdit: () => openEditDialog(project),
+											onDelete: () => setDeleteTarget(project),
+											onMoveTo: (status) =>
+												setLifecycleTarget({ project, status }),
+										})}
+										progressPercentage={project.progress.percentage}
+										project={project}
+									/>
+								</li>
+							);
+						})}
 					</ul>
 					<DataPagination
 						disabled={internalQuery.isFetching}
@@ -229,16 +250,28 @@ export function ProjectListSection() {
 				project={editingProject}
 				role={role}
 			/>
-			{archiveTarget ? (
-				<ProjectArchiveDialog
+			{deleteTarget ? (
+				<ProjectDeleteDialog
 					onOpenChange={(open) => {
 						if (!open) {
-							setArchiveTarget(null);
+							setDeleteTarget(null);
 						}
 					}}
-					open={archiveTarget !== null}
-					project={archiveTarget}
+					open
+					project={deleteTarget}
 					role={role}
+				/>
+			) : null}
+			{lifecycleTarget ? (
+				<ProjectLifecycleDialog
+					onOpenChange={(open) => {
+						if (!open) {
+							setLifecycleTarget(null);
+						}
+					}}
+					open
+					project={lifecycleTarget.project}
+					targetStatus={lifecycleTarget.status}
 				/>
 			) : null}
 		</div>

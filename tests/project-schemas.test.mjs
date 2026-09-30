@@ -3,7 +3,6 @@ import { getProjectStatusLabel } from "../features/projects/labels.ts";
 import {
 	createProjectFormSchema,
 	toCreateProjectPayload,
-	toUpdateProjectPayload,
 } from "../features/projects/schemas.ts";
 import { PROJECT_STATUSES } from "../features/projects/types.ts";
 
@@ -107,11 +106,10 @@ describe("project form payload mapping", () => {
 		});
 	});
 
-	test("update payload mirrors the create mapping", () => {
-		expect(toUpdateProjectPayload(validValues)).toEqual(
-			toCreateProjectPayload(validValues),
-		);
-	});
+	// There is deliberately no "update payload" mapping that mirrors create. The
+	// edit form carries no status, because a project's position is moved through
+	// the confirmed lifecycle actions rather than as a field on a rename. See
+	// project-lifecycle.test.mjs for the settings form's own mapping.
 });
 
 describe("project status labels", () => {

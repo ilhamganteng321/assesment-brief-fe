@@ -12,13 +12,14 @@ import { getApiErrorMessage } from "@/lib/api/error";
 import { DEFAULT_ROWS } from "@/lib/api/query/types";
 
 import { getStartBlockedReason } from "../dependency";
-import { useTaskList, useUpdateTask } from "../hooks";
+import { useMyTaskList, useTaskList, useUpdateTask } from "../hooks";
 import {
 	DEFAULT_TASK_LIST_STATE,
 	DEFAULT_TASK_ORDER_KEY,
 	DEFAULT_TASK_ORDER_RULE,
 	parseTaskListState,
 	serializeTaskListState,
+	type TaskListScope,
 	type TaskListState,
 	toTaskListQueryParams,
 	withTaskPage,
@@ -38,13 +39,30 @@ type TaskListSectionProps = {
 	assignees?: readonly TaskAssigneeSummary[];
 	/** Display name for the scoped project. */
 	projectName?: string;
+	/**
+	 * Which question the list answers.
+	 *
+	 * `"all"` is every task the caller can reach; `"mine"` is only the ones they
+	 * are on. Both go through the same component, the same URL state, the same
+	 * toolbar and the same rows, so the two cannot drift apart — and they differ
+	 * only in which endpoint answers, because the difference between them is not a
+	 * filter. "Mine" is the server's answer to a question about the JWT's subject,
+	 * not a `assignedToId` the browser supplied.
+	 *
+	 * The assignee filter is hidden in `"mine"` mode: every row is the caller, so
+	 * offering a control that narrows to one person would be a choice with exactly
+	 * one possible value.
+	 */
+	scope?: TaskListScope;
 };
 
 export function TaskListSection({
 	projectId = "",
 	assignees = [],
 	projectName,
+	scope = "all",
 }: TaskListSectionProps) {
+	const isMine = scope === "mine";
 	const { user } = useAuth();
 	const role = user?.role;
 	const router = useRouter();
@@ -70,24 +88,20 @@ export function TaskListSection({
 	// never converge.
 	const [editingTaskId, setEditingTaskId] = useState<string | undefined>();
 	const queryParams = useMemo(() => toTaskListQueryParams(state), [state]);
-	const query = useTaskList(role, queryParams);
+	// Both queries are mounted and exactly one is switched on. A conditional hook
+	// call would break the rules of hooks, and firing both would double the requests
+	// on whichever page the reader is actually on.
+	const allTasksQuery = useTaskList(role, queryParams, { enabled: !isMine });
+	const myTasksQuery = useMyTaskList(role, queryParams, { enabled: isMine });
+	const query = isMine ? myTasksQuery : allTasksQuery;
 	const startTask = useUpdateTask();
 	const canManage = role === "PM";
-	const assigneeNames = useMemo(
-		() => new Map(assignees.map((assignee) => [assignee.id, assignee.name])),
-		[assignees],
-	);
-	// The API has no "unassigned" keyword, so that one filter narrows the page the
-	// server already authorised instead of being pushed into the query. Every
-	// other filter is a real server-side predicate.
+	// Every filter here is a real server-side predicate, `"unassigned"` included —
+	// the API accepts it as a value on `assignedToId` and resolves it to a null
+	// predicate before counting. Nothing is narrowed in the browser, so the rows on
+	// screen and the reported total always describe the same set.
 	const fetchedTasks = query.data?.tasks;
-	const visibleTasks = useMemo(
-		() =>
-			state.assignedToId === "unassigned"
-				? (fetchedTasks ?? []).filter((task) => task.assignedToId === null)
-				: (fetchedTasks ?? []),
-		[state.assignedToId, fetchedTasks],
-	);
+	const visibleTasks = fetchedTasks ?? [];
 
 	const applyState = useCallback(
 		(nextState: TaskListState) => {
@@ -158,7 +172,7 @@ export function TaskListSection({
 	return (
 		<div className="flex flex-col gap-6">
 			<TaskListToolbar
-				assignees={assignees}
+				assignees={isMine ? [] : assignees}
 				canCreate={canManage && state.projectId.length > 0}
 				isFetching={query.isFetching}
 				state={state}
@@ -254,7 +268,6 @@ export function TaskListSection({
 					}`}
 				>
 					<TaskBoard
-						assigneeNames={assigneeNames}
 						projectName={projectName}
 						tasks={visibleTasks}
 						onEdit={canManage ? openEditDialog : undefined}
@@ -271,7 +284,6 @@ export function TaskListSection({
 						{visibleTasks.map((task) => (
 							<li key={task.id}>
 								<TaskCard
-									assigneeName={assigneeNames.get(task.assignedToId ?? "")}
 									projectName={projectName}
 									startBlockedReason={getStartBlockedReason(task)}
 									task={task}

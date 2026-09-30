@@ -21,7 +21,6 @@ const columnTitles: Record<TaskBoardColumn, string> = {
 
 type TaskBoardProps = {
 	tasks: readonly Task[];
-	assigneeNames?: ReadonlyMap<string, string>;
 	projectName?: string;
 	onEdit?: (task: Task) => void;
 	onStart?: (task: Task) => void;
@@ -30,11 +29,12 @@ type TaskBoardProps = {
 /**
  * The dependency-aware board. Every column comes from server state: the
  * `BLOCKED` column is filled from the calculated `isBlocked`, never from a
- * status the client is allowed to set.
+ * status the client is allowed to set. Cards read their assignee from the task's
+ * own resolved field rather than from a name map passed in, so the board needs no
+ * member list of its own.
  */
 export function TaskBoard({
 	tasks,
-	assigneeNames,
 	projectName,
 	onEdit,
 	onStart,
@@ -72,7 +72,6 @@ export function TaskBoard({
 								{columnTasks.map((task) => (
 									<li key={task.id}>
 										<TaskCard
-											assigneeName={assigneeNames?.get(task.assignedToId ?? "")}
 											projectName={projectName}
 											startBlockedReason={getStartBlockedReason(task)}
 											task={task}

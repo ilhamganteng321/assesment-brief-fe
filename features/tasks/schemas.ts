@@ -143,11 +143,11 @@ export function toUpdateTaskPayload(
 		may("assignedToId") &&
 		assignedToId !== (original.assignedToId?.trim() ?? "")
 	) {
-		if (assignedToId.length > 0) {
-			payload.assignedToId = assignedToId;
-		} else {
-			payload.assignedToId = undefined;
-		}
+		// `null` rather than `undefined` when the field is cleared. An omitted key
+		// means "leave it alone", so sending nothing would submit a no-op and leave
+		// the task looking as though nobody had touched it. The API accepts an
+		// explicit null precisely so that "take it off" is expressible.
+		payload.assignedToId = assignedToId.length > 0 ? assignedToId : null;
 	}
 
 	if (may("status") && values.status !== original.status) {

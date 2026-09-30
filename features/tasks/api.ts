@@ -27,6 +27,30 @@ export async function listTasks(
 	return response.data.data;
 }
 
+/**
+ * The tasks assigned to the caller.
+ *
+ * No user id is sent, and that is the whole design: the server resolves the
+ * assignee from the verified access token and discards an `assignedToId` that
+ * arrives in the filters, so this cannot be turned into "which projects does that
+ * person work on". Passing `params.filters.assignedToId` here would be silently
+ * ignored, which is why the signature takes the ordinary list query and nothing
+ * more.
+ */
+export async function listMyTasks(
+	params: ListQueryParams = {},
+	signal?: AbortSignal,
+): Promise<TaskList> {
+	const response = await apiClient.get<ApiSuccessResponse<TaskList>>(
+		"/tasks/my",
+		{
+			params: buildQueryParams(params),
+			signal,
+		},
+	);
+	return response.data.data;
+}
+
 export async function getTask(
 	taskId: string,
 	signal?: AbortSignal,
